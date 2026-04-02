@@ -13,7 +13,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 calibrate({MBx,MBy,MBz}) ->
-    _ = io:get_line("Place the pmod_nav at 0° then press enter"),
+    _ = io:get_line("e11 (acc/mag):Place the pmod_nav at 0° then press enter"),
     [Ax,Ay,Az] = calibrate(acc, [out_x_xl, out_y_xl, out_z_xl], 100),
     [Mx,My,Mz] = calibrate(mag, [out_x_m, out_y_m, out_z_m], 10),
     R0 = ahrs([Ax,Ay,-Az], [-(Mx-MBx),My-MBy,-(Mz-MBz)]),
@@ -36,7 +36,7 @@ init(R0) ->
 
 
 measure({T0, X0, P0, R0}) ->
-    DataNav = hera_data:get(nav3, sensor_fusion@nav_1),
+    DataNav = hera_data:get(nav3, sensor_fusion@nav_2),
     T1 = hera:timestamp(),
     Nav = [Data || {_,_,Ts,Data} <- DataNav, T0 < Ts, T1-Ts < 500],
     if

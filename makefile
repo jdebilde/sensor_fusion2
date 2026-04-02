@@ -1,8 +1,31 @@
 .PHONY: liveView test
 
 # deploy-hostname: build and deploy sensor_fusion on SD card
-deploy-%:
-	NAME=$* rebar3 grisp deploy -n sensor_fusion -v 1.0.0
+# deploy-%:
+# 	NAME=$* rebar3 grisp deploy -n sensor_fusion -v 1.0.0
+deploy-nav_1:
+	sed -i '/static ip_address=/c\static ip_address=172.20.10.4/28' grisp/grisp2/common/deploy/files/etc/dhcpcd.conf
+	NAME=nav_1 rebar3 grisp deploy -n sensor_fusion -v 1.0.0
+
+deploy-nav_2:
+	sed -i '/static ip_address=/c\static ip_address=172.20.10.5/28' grisp/grisp2/common/deploy/files/etc/dhcpcd.conf
+	NAME=nav_2 rebar3 grisp deploy -n sensor_fusion -v 1.0.0
+
+deploy-nav_3:
+	sed -i '/static ip_address=/c\static ip_address=172.20.10.6/28' grisp/grisp2/common/deploy/files/etc/dhcpcd.conf
+	NAME=nav_3 rebar3 grisp deploy -n sensor_fusion -v 1.0.0
+
+deploy-uwb_1:
+	sed -i '/static ip_address=/c\static ip_address=172.20.10.7/28' grisp/grisp2/common/deploy/files/etc/dhcpcd.conf
+	NAME=uwb_1 rebar3 grisp deploy -n sensor_fusion -v 1.0.0
+
+deploy-uwb_2:
+	sed -i '/static ip_address=/c\static ip_address=172.20.10.8/28' grisp/grisp2/common/deploy/files/etc/dhcpcd.conf
+	NAME=uwb_2 rebar3 grisp deploy -n sensor_fusion -v 1.0.0
+
+deploy-uwb_3:
+	sed -i '/static ip_address=/c\static ip_address=172.20.10.9/28' grisp/grisp2/common/deploy/files/etc/dhcpcd.conf
+	NAME=uwb_3 rebar3 grisp deploy -n sensor_fusion -v 1.0.0
 
 # screen: show the screen of the grisp connected by usb3 cable
 screen:

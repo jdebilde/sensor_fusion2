@@ -26,6 +26,7 @@ end
 function setMode(bool)
     global replay
     replay = bool;
+    fprintf("replay = %d\n", replay);
 end
 
 function setView(idx)

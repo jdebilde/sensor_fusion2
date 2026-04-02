@@ -35,6 +35,7 @@ set_args(sonar, RangeMax, X, Y) ->
 
 
 launch() ->
+    io:format("launch()~n"),
     try launch(node_type()) of
         ok ->
             [grisp_led:color(L, green) || L <- [1, 2]],
@@ -81,6 +82,7 @@ update_code(Application, Module, Binary) ->
 
 start(_Type, _Args) ->
     {ok, Supervisor} = sensor_fusion_sup:start_link(),
+    io:format("start(_Type, _Args) ~n"),
     init_table(),
     case node_type() of
         nav ->
@@ -104,6 +106,7 @@ stop(_State) -> ok.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 node_type() ->
+    io:format("node_type()~n"),
     Host = lists:nthtail(14, atom_to_list(node())),
     IsNav = lists:prefix("nav", Host),
     IsSonar = lists:prefix("sonar", Host),
@@ -115,17 +118,26 @@ node_type() ->
 
 
 launch(nav) ->
+    io:format("launch(nav)~n"),
     % Cn = ets:lookup_element(args, {nav, node()}, 2),
     % Cm = ets:lookup_element(args, {mag, node()}, 2),
+    io:format("Cn~n"),
     Cn = ets:lookup_element(args, {nav3, node()}, 2),
+    io:format("R0~n"),
     R0 = ets:lookup_element(args, {e11, node()}, 2),
     % {ok,_} = hera:start_measure(nav, Cn),
     % {ok,_} = hera:start_measure(mag, Cm),
+    io:format("nav3~n"),
     {ok,_} = hera:start_measure(nav3, Cn),
+    io:format("e11~n"),
     {ok,_} = hera:start_measure(e11, R0),
+    io:format("post_est~n"),
+    {ok,_} = hera:start_measure(pos_est, Cn),
+    io:format("OK~n"),
     ok;
 
 launch(sonar) ->
+    io:format("launch(sonar)~n"),
     Cs = ets:lookup_element(args, {sonar, node()}, 2),
     {ok,_} = hera:start_measure(sonar, Cs),
     %{ok,_} = hera:start_measure(bilateration, undefined),
@@ -133,10 +145,12 @@ launch(sonar) ->
     ok;
 
 launch(_) ->
+    io:format("launch(_)~n"),
     ok.
 
 
 init_table() ->
+    io:format("init_table~n"),
     args = ets:new(args, [public, named_table]),
     {ResL,_} = rpc:multicall(nodes(), ets, tab2list, [args]),
     L = lists:filter(fun(Res) ->
@@ -145,5 +159,6 @@ init_table() ->
 
 
 update_table(Object) ->
+    io:format("update_table~n"),
     _ = rpc:multicall(ets, insert, [args, Object]),
     ok.

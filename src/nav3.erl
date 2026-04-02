@@ -12,12 +12,13 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 calibrate() ->
-    io:format("Place de pmod_nav flat and still!~n"),
+    io:format("nav3 (gyro/mag): Place de pmod_nav flat and still!~n"),
+    % Gyro, degrees per second
     [Gx,Gy,Gz] = calibrate(acc, [out_x_g,out_y_g,out_z_g], 300),
     [Mx1,My1,Mz1] = calibrate(mag, [out_x_m, out_y_m, out_z_m], 10),
-    _ = io:get_line("Turn the pmod_nav 180° around the z axis then press enter"),
+    _ = io:get_line("nav3 (mag): Turn the pmod_nav 180° around the z axis then press enter"),
     [Mx2,My2,_] = calibrate(mag, [out_x_m, out_y_m, out_z_m], 10),
-    _ = io:get_line("Turn the pmod_nav 180° around the x axis then press enter"),
+    _ = io:get_line("nav3 (mag): Turn the pmod_nav 180° around the x axis then press enter"),
     [_,_,Mz2] = calibrate(mag, [out_x_m, out_y_m, out_z_m], 10),
     BiasX = 0.5*(Mx1+Mx2),
     BiasY = 0.5*(My1+My2),
@@ -38,6 +39,9 @@ init(C) ->
 
 
 measure(C=#cal{gyro={GBx,GBy,GBz}, mag={MBx,MBy,MBz}}) ->
+    io:format("Ne fonctionne pas! ~n"),
+    % accelerometer, G-force
+    % Gyro, degrees per second
     [Ax,Ay,Az, Gx,Gy,Gz] = pmod_nav:read(acc, [
         out_x_xl,out_y_xl,out_z_xl,
         out_x_g,out_y_g,out_z_g]),

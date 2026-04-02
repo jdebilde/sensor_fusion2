@@ -1,9 +1,13 @@
 %--- Erlang Inet Configuration -------------------------------------------------
 
 % Add hosts
-{host, {X,X,X,X}, ["hostname_computer"]}.
-{host, {X,X,X,X}, ["nav_1"]}.
-{host, {X,X,X,X}, ["sonar_1"]}.
+{host, {172,20,10,3}, ["mandemFC"]}.
+{host, {172,20,10,4}, ["nav_1"]}.
+{host, {172,20,10,5}, ["nav_2"]}.
+{host, {172,20,10,6}, ["nav_3"]}.
+{host, {172,20,10,7}, ["uwb_1"]}.
+{host, {172,20,10,8}, ["uwb_2"]}.
+{host, {172,20,10,9}, ["uwb_3"]}.
 
 % Do not monitor the hosts file
 {hosts_file, ""}.

@@ -12,7 +12,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 calibrate() ->
-    io:format("Calibrating... Do not move the pmod_nav!~n"),
+    io:format("nav (acc): Calibrating... Do not move the pmod_nav!~n"),
     [Ax,Ay,Az] = calibrate(acc, [out_x_xl, out_y_xl, out_z_xl], 500),
     [Gx,Gy,Gz] = calibrate(acc, [out_x_g, out_y_g, out_z_g], 500),
     #cal{acc=[Ax,Ay,-Az], gyro=[Gx,Gy,-Gz]}.
@@ -30,7 +30,9 @@ init(Calibration) ->
 
 
 measure(C) ->
+    % accelerometer, G-force
     [Ax,Ay,Az] = pmod_nav:read(acc, [out_x_xl, out_y_xl, out_z_xl]),
+    % Gyro, degrees per second
     [Gx,Gy,Gz] = pmod_nav:read(acc, [out_x_g, out_y_g, out_z_g]),
     {A,G} = correctRotationY([Ax,Ay,-Az], [Gx,Gy,-Gz], C#cal.acc, C#cal.gyro),
     {ok, [lists:nth(2,A)*9.81, lists:nth(3,G)*math:pi()/180], C}.

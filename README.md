@@ -212,6 +212,22 @@ make remote-nav_1
 Then you must call:
 ```erlang
 sensor_fusion:set_args(Nav).
+sensor_fusion:set_args(nav).
+```
+```erlang
+sensor_fusion:set_args(nav3).
+
+Cn = ets:lookup_element(args, {nav3, node()}, 2).
+
+{ok,_} = hera:start_measure(nav3, Cn).
+
+{ok,_} = hera:start_measure(pos_est, Cn).
+
+hera_data:get(nav3, sensor_fusion@nav_1).
+
+hera_data:get(nav3, sensor_fusion@nav_2).
+
+sensor_fusion:stop_all().
 ```
 Where `Nav` is either `nav` or `nav3`.
 The former is used for the experiments with the train while the latter is used for the 6 DOF IMU.

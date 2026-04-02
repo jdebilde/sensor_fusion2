@@ -4,13 +4,14 @@ function updateTrain(Data, handles)
 
     axes(handles(1));
     cla(handles(1));
+    % fprintf("(%f, %f)\n", X(3), X(4));
     plot(X(3), X(4), '.', "markersize", 20);
 
-    axes(handles(2));
-    cla(handles(2));
-    plot([0 1], [X(6) X(6)]);
+    % axes(handles(2));
+    % cla(handles(2));
+    % plot([0 1], [X(6) X(6)]);
 
-    axes(handles(3));
-    cla(handles(3));
-    plot([0 1], [X(7) X(7)]);
+    % axes(handles(3));
+    % cla(handles(3));
+    % plot([0 1], [X(7) X(7)]);
 end

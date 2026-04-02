@@ -23,3 +23,11 @@ rebar3.crashdump
 
 _grisp
 .vscode
+
+# JJ
+.tool-versions
+eeprom_board.dat
+eeprom_som.dat
+rebar.lock
+python
+liveView/octave-workspace

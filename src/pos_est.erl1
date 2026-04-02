@@ -1,0 +1,158 @@
+-module(pos_est).
+
+%% This module implements a simple position estimator using a Kalman-like prediction.
+%% It uses only accelerometer data (from pmodNAV) to estimate position and velocity.
+%% WARNING: This will drift over time (no correction step).
+
+-behaviour(hera_measure).
+
+-export([init/1, measure/1]).
+
+%%==============================================================================
+%% INIT
+%%==============================================================================
+
+init(_) ->
+    %% Initial state vector X0:
+    %% [x, y, z, vx, vy, vz]^T
+    %% Start at zero position and zero velocity
+    X0 = mat:zeros(6,1),
+
+    %% Initial covariance matrix P0:
+    %% Identity means "some uncertainty but not huge"
+    P0 = mat:eye(6),
+
+    %% Initial timestamp
+    T0 = hera:timestamp(),
+
+    %% Hera measurement specification:
+    %% - name: module name
+    %% - iter: run indefinitely
+    Spec = #{
+        name => ?MODULE,
+        iter => infinity
+    },
+
+    %% Return initial state
+    {ok, {T0, X0, P0}, Spec}.
+
+
+%%==============================================================================
+%% MEASURE LOOP
+%%==============================================================================
+
+measure({T0, X0, P0}) ->
+    %% Get current timestamp
+    T1 = hera:timestamp(),
+
+    %% Compute time difference in seconds
+    Dt = (T1 - T0) / 1000,
+
+    %% Get latest NAV data (acc, gyro, mag)
+    %% Format from nav3:
+    %% [Ax, Ay, Az, Gx, Gy, Gz, Mx, My, Mz]
+    DataNav = hera_data:get(nav3, node()),
+
+    %% Extract most recent measurement
+    %% (we take the latest available sample)
+    case DataNav of
+        [] ->
+            %% No data available → do nothing
+            {undefined, {T0, X0, P0}};
+
+        _ ->
+            %% Take last element
+            {_,_,_,Data} = lists:last(DataNav),
+
+            %% Extract acceleration (first 3 values)
+            [Ax, Ay, Az | _] = Data,
+
+            %% Optional: subtract gravity (very rough approximation)
+            %% This assumes Z axis is aligned with gravity
+            % Az1 = Az - 9.81,
+            Norm = math:sqrt(Ax*Ax + Ay*Ay + Az*Az),
+
+            Gx = Ax / Norm * 9.81,
+            Gy = Ay / Norm * 9.81,
+            Gz = Az / Norm * 9.81,
+
+            Ax1 = Ax - Gx,
+            Ay1 = Ay - Gy,
+            Az1 = Az - Gz,
+
+            %% Build acceleration vector (3x1)
+            % A = mat:matrix([[Ax],[Ay],[Az1]]),
+            A = mat:matrix([[Ax1],[Ay1],[Az1]]),
+
+            %% Build system matrices
+            F = make_F(Dt),
+            B = make_B(Dt),
+
+            %%==============================================================================
+            %% PREDICTION STEP
+            %%==============================================================================
+
+            %% Predict next state:
+            %% Xp = F * X + B * a
+            Xp = mat:'+'(
+                    mat:'*'(F, X0),
+                    mat:'*'(B, A)
+                 ),
+
+            %% Process noise (uncertainty in model)
+            Q = make_Q(),
+
+            %% Predict covariance:
+            %% Pp = F * P * F^T + Q
+            Pp = mat:'+'(
+                    mat:'*'(F, mat:'*'(P0, mat:tr(F))),
+                    Q
+                 ),
+
+            %% Return:
+            %% - ok: valid output
+            %% - mat:to_array(Xp): state as list (for logging / Hera)
+            %% - new internal state
+            {ok, mat:to_array(Xp), {T1, Xp, Pp}}
+    end.
+
+
+%%==============================================================================
+%% SYSTEM MATRICES
+%%==============================================================================
+
+%% State transition matrix F (6x6)
+%% Models:
+%% x = x + v*dt
+%% v = v
+make_F(Dt) ->
+    mat:matrix([
+        [1,0,0,Dt,0,0],   %% x depends on vx
+        [0,1,0,0,Dt,0],   %% y depends on vy
+        [0,0,1,0,0,Dt],   %% z depends on vz
+        [0,0,0,1,0,0],    %% vx constant
+        [0,0,0,0,1,0],    %% vy constant
+        [0,0,0,0,0,1]     %% vz constant
+    ]).
+
+
+%% Control matrix B (6x3)
+%% Maps acceleration to state
+make_B(Dt) ->
+    Dt2 = 0.5 * Dt * Dt, %% 0.5 * dt^2 term for position
+    mat:matrix([
+        [Dt2,0,0],        %% ax affects x
+        [0,Dt2,0],        %% ay affects y
+        [0,0,Dt2],        %% az affects z
+        [Dt,0,0],         %% ax affects vx
+        [0,Dt,0],         %% ay affects vy
+        [0,0,Dt]          %% az affects vz
+    ]).
+
+
+%% Process noise matrix Q (6x6)
+%% Represents uncertainty in model (acc noise, etc.)
+make_Q() ->
+    %% For now: simple identity matrix
+    %% You will tune this later
+    mat:eye(6).
