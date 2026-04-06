@@ -4,112 +4,124 @@
 -define(C, 299792458).
 -define(DWT_TIME_UNIT, 15.65e-12).
 
+-define(TIMEOUT, 20000). % 20 ms
+-define(RETRY_DELAY, 200). % ms
+
 %%% =========================
-%%% INITIATOR (BOARD A)
+%%% INITIATOR
 %%% =========================
 
 initiator() ->
     pmod_uwb:start_link(spi2, []),
+    pmod_uwb:set_frame_timeout(?TIMEOUT),
     io:format("Initiator started~n"),
-    loop_initiator().
+    loop_initiator(0).
 
-loop_initiator() ->
-    timer:sleep(1000),
-    io:format("initiator: OK~n"),
+loop_initiator(Seq) ->
+    io:format("do_ranging...~n"),
+    case do_ranging(Seq) of
+        ok ->
+            io:format("Ok [~p]...~n", [Seq]),
+            timer:sleep(?RETRY_DELAY),
+            loop_initiator((Seq + 1) band 16#FF);
 
-    %% ---- STEP 1: POLL ----
-    io:format("initiator: transmit~n"),
-    pmod_uwb:transmit(<<"POLL">>),
+        timeout ->
+            io:format("Retrying [~p]...~n", [Seq]),
+            loop_initiator(Seq)
+    end.
+
+do_ranging(Seq) ->
+    %% ---- STEP 1: SEND POLL ----
+    Poll = <<"POLL:", Seq:8>>,
+    pmod_uwb:transmit(Poll),
     #{tx_stamp := T1} = pmod_uwb:read(tx_time),
 
     %% ---- STEP 2: WAIT RESP ----
-    io:format("initiator: reception~n"),
     case pmod_uwb:reception() of
-        {_, <<"RESP:", T2:40, T3:40>>} ->
-
+        % {_, <<"RESP:", Seq:8, T2:40, T3:40>>} ->
+        {_, <<"RESP:", Seq:8, T2:40>>} ->
             #{rx_stamp := T4} = pmod_uwb:read(rx_time),
+            #{tx_stamp := T3} = pmod_uwb:read(tx_time),
 
-            %% ---- STEP 3: SEND FINAL ----
-            FinalMsg = <<"FINAL:", T1:40, T4:40>>,
-            io:format("initiator: transmit 2~n"),
-            pmod_uwb:transmit(FinalMsg),
+            Final = <<"FINAL:", Seq:8, T1:40, T4:40>>,
+            pmod_uwb:transmit(Final),
             #{tx_stamp := T5} = pmod_uwb:read(tx_time),
 
-            io:format("Sent FINAL T1=~p T4=~p T5=~p~n", [T1, T4, T5]);
+            io:format("Seq=~p T1=~p T4=~p~n", [Seq, T1, T4]),
+            io:format("Seq=~p T2=~p T3=~p?~n", [Seq, T2, T3]),
+            io:format("Seq=~p T5=~p~n", [Seq, T5]),
+            io:format("Sent FINAL (~p)~n", [Seq]),
+            ok;
 
-        {error, Reason} ->
-            io:format("RX error: ~p~n", [Reason]);
+        {_, rxrfto} ->
+            io:format("Unexpected RESP: [rxrfto]~n"),
+            timeout;
 
-        Other ->
-            io:format("Unexpected: ~p~n", [Other])
-    end,
-
-    loop_initiator().
+        {_, Other} ->
+            io:format("Unexpected RESP: ~p~n", [Other]),
+            timeout
+    end.
 
 %%% =========================
-%%% RESPONDER (BOARD B)
+%%% RESPONDER
 %%% =========================
 
 responder() ->
     pmod_uwb:start_link(spi2, []),
+    pmod_uwb:set_frame_timeout(?TIMEOUT),
     io:format("Responder started~n"),
     loop_responder().
 
 loop_responder() ->
-    %% ---- STEP 1: WAIT POLL ----
-    io:format("responder: reception~n"),
+    io:format("reception...~n"),
     case pmod_uwb:reception() of
-        {_, <<"POLL">>} ->
 
-            #{rx_stamp := T2} = pmod_uwb:read(rx_time),
+        %% ---- STEP 1: RECEIVE POLL ----
+        {_, <<"POLL:", Seq:8>>} ->
+            io:format("RECEIVE POLL [~p]...~n", [Seq]),
+            handle_poll(Seq);
 
-            %% ---- STEP 2: SEND RESP ----
-            io:format("responder: transmit~n"),
-            %% Send placeholder first (we fix below)
-            pmod_uwb:transmit(<<0>>),
-            #{tx_stamp := T3} = pmod_uwb:read(tx_time),
+        %% Ignore everything else
+        {error, _} ->
+            io:format("error...~n"),
+            ok;
 
-            %% Now send correct RESP with timestamps
-            RespMsg = <<"RESP:", T2:40, T3:40>>,
-            io:format("responder: transmit 2~n"),
-            pmod_uwb:transmit(RespMsg),
+        _ ->
+            io:format("_...~n"),
+            ok
+    end,
+    loop_responder().
 
-            %% ---- STEP 3: WAIT FINAL ----
-            io:format("responder: reception 2~n"),
-            case pmod_uwb:reception() of
-                {_, <<"FINAL:", T1:40, T4:40>>} ->
+handle_poll(Seq) ->
+    #{rx_stamp := T2} = pmod_uwb:read(rx_time),
 
-                    #{rx_stamp := T6} = pmod_uwb:read(rx_time),
+    %% Send RESP immediately
+    Resp = <<"RESP:", Seq:8, T2:40>>,
+    pmod_uwb:transmit(Resp),
+    #{tx_stamp := T3} = pmod_uwb:read(tx_time),
 
-                    %% ---- DS-TWR COMPUTATION ----
-                    Tround1 = T4 - T1,
-                    Treply1 = T3 - T2,
-                    Tround2 = T6 - T3,
-                    Treply2 = T5 = T4 - T1, %% approximate (initiator delay small)
+    %% Do NOT wait strictly for FINAL
+    wait_final(Seq, T2, T3).
 
-                    %% Simplified symmetric formula
-                    ToF =
-                        ((Tround1 - Treply1) +
-                         (Tround2 - Treply2)) div 4,
+wait_final(Seq, T2, T3) ->
+    case pmod_uwb:reception() of
+        {_, <<"FINAL:", Seq:8, T1:40, T4:40>>} ->
+            #{rx_stamp := T6} = pmod_uwb:read(rx_time),
+            Tround = T4 - T1,
+            Treply = T3 - T2,
+            ToF = (Tround - Treply) div 2,
+            Distance = ToF * ?DWT_TIME_UNIT * ?C,
+            io:format("Seq=~p T1=~p T4=~p~n", [Seq, T1, T4]),
+            io:format("Seq=~p T2=~p T3=~p~n", [Seq, T2, T3]),
+            io:format("Seq=~p T6=~p~n", [Seq, T6]),
+            io:format("Seq=~p Distance=~p m~n", [Seq, Distance]);
 
-                    Distance =
-                        ToF * ?DWT_TIME_UNIT * ?C,
+        rxrfto ->
+            ok;
 
-                    io:format("T2=~p T3=~p T6=~p~n", [T2, T3, T6]),
-                    io:format("ToF=~p Distance=~p m~n~n", [ToF, Distance]);
-
-                {error, R2} ->
-                    io:format("FINAL RX error: ~p~n", [R2]);
-
-                Other2 ->
-                    io:format("Unexpected FINAL: ~p~n", [Other2])
-            end;
-
-        {error, Reason} ->
-            io:format("RX error: ~p~n", [Reason]);
+        {error, _} ->
+            ok;
 
         _ ->
             ok
-    end,
-
-    loop_responder().
+    end.
