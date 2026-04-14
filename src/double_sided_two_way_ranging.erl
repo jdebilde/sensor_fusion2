@@ -19,8 +19,8 @@
 
 initiator() ->
     pmod_uwb:start_link(spi2, []),
-    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
-    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
+    % pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
+    % pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     % pmod_uwb:set_frame_timeout(?TIMEOUT),
     pmod_uwb:set_frame_timeout(16#FFFF),
     io:format("Initiator started~n"),
@@ -54,8 +54,8 @@ do_ranging(Seq) ->
             %% ---- T5 ----
             FinalTXTime = T4 + (40000 * ?UUS_TO_DWT_TIME), % why 30000?
             pmod_uwb:write(dx_time, #{dx_time => FinalTXTime}),
-            T5 = FinalTXTime + ?TX_ANTD,
-            % T5 = FinalTXTime,
+            % T5 = FinalTXTime + ?TX_ANTD,
+            T5 = FinalTXTime,
             Final = <<"FINAL:", Seq:8, T1:40, T4:40, T5:40>>,
             pmod_uwb:write(sys_status, #{txfcg => 2#1}),
             % Sending the final message
@@ -81,8 +81,8 @@ do_ranging(Seq) ->
 
 responder() ->
     pmod_uwb:start_link(spi2, []),
-    pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
-    pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
+    % pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
+    % pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     % pmod_uwb:set_frame_timeout(?TIMEOUT),
     pmod_uwb:set_frame_timeout(16#FFFF),
     io:format("Responder started~n"),
@@ -113,27 +113,24 @@ handle_poll(Seq) ->
     % io:format("T2~n"),
 
     %% ---- T3 ----
-    % Resp = <<"RESP:", Seq:8, T2:40>>,
-    % pmod_uwb:transmit(Resp),
-    % #{tx_stamp := T3} = pmod_uwb:read(tx_time),
-    % io:format("T3~n"),
+    Resp = <<"RESP:", Seq:8, T2:40>>,
+    pmod_uwb:transmit(Resp),
+    #{tx_stamp := T3} = pmod_uwb:read(tx_time),
+    io:format("Seq=~p T3=~p~n", [Seq, T3]),
 
     %% ---- T3 ----
-    RespTXTime = T2 + (40000 * ?UUS_TO_DWT_TIME), % why 30000?
-    pmod_uwb:write(dx_time, #{dx_time => RespTXTime}),
-    T3 = RespTXTime + ?TX_ANTD,
+    % RespTXTime = T2 + (40000 * ?UUS_TO_DWT_TIME), % why 30000?
+    % pmod_uwb:write(dx_time, #{dx_time => RespTXTime}),
+    % % T3 = RespTXTime + ?TX_ANTD,
     % T3 = RespTXTime,
-    Resp = <<"RESP:", Seq:8, T2:40>>,
+    % Resp = <<"RESP:", Seq:8, T2:40>>,
     % pmod_uwb:write(sys_status, #{txfcg => 2#1}),
-    % Sending the final message
-    pmod_uwb:transmit(Resp, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 20000, txdlys = ?ENABLED, tx_delay = RespTXTime}),
-    #{tx_stamp := T3_REAL} = pmod_uwb:read(tx_time),
-    DIFF = (T3_REAL - T3),
-    io:format("Seq=~p T3_REAL=~p T3=~p (~p)~n", [Seq, T3_REAL, T3, DIFF]),
+    % % Sending the final message
+    % pmod_uwb:transmit(Resp, #tx_opts{wait4resp = ?ENABLED, w4r_tim = 20000, txdlys = ?ENABLED, tx_delay = RespTXTime}),
+    % #{tx_stamp := T3_REAL} = pmod_uwb:read(tx_time),
+    % DIFF = (T3_REAL - T3),
+    % io:format("Seq=~p T3_REAL=~p T3=~p (~p)~n", [Seq, T3_REAL, T3, DIFF]),
 
-    wait_final(Seq, T2, T3).
-
-wait_final(Seq, T2, T3) ->
     case pmod_uwb:reception() of
 
         {_, <<"FINAL:", Seq:8, T1:40, T4:40, T5:40>>} ->
@@ -143,7 +140,9 @@ wait_final(Seq, T2, T3) ->
             %% ---- DS-TWR COMPUTATION ----
             Tround1 = T4 - T1,
             Treply1 = T3 - T2,
+            % Treply1 = T3_REAL - T2,
             Tround2 = T6 - T3,
+            % Tround2 = T6 - T3_REAL,
             Treply2 = T5 - T4,
 
             ToF =
@@ -154,7 +153,9 @@ wait_final(Seq, T2, T3) ->
             Distance =
                 ToF * ?DWT_TIME_UNIT * ?C,
             io:format("Seq=~p T1=~p T4=~p T2=~p T3=~p T6=~p T5=~p~n", [Seq, T1, T4, T2, T3, T6, T5]),
-            io:format("Seq=~p Distance=~p cm~n", [Seq, Distance * 100]);
+            % io:format("Seq=~p T1=~p T4=~p T2=~p T3=~p T6=~p T5=~p~n", [Seq, T1, T4, T2, T3_REAL, T6, T5]),
+            io:format("Seq=~p Distance=~p cm~n", [Seq, Distance * 100]),
+            io:format("Seq=~p TOF=~p (~p)~n", [Seq, ToF, ToF-213]);
 
         {error, ANSWER} ->
             io:format("{error, ~p}~n", [ANSWER]),
