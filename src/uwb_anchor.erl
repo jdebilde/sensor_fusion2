@@ -1,6 +1,6 @@
 -module(uwb_anchor).
 
--export([start/1, loop/1]).
+-export([start/1, stop/0, ensure_started/0, loop/1]).
 
 -define(C, 299792458).
 -define(DWT_TIME_UNIT, 15.65e-12).
@@ -34,15 +34,44 @@ configure_uwb() ->
     pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     pmod_uwb:set_frame_timeout(16#FFFF).
 
+stop() ->
+    case whereis(pmod_uwb) of
+        undefined ->
+            ok;
+        Pid ->
+            exit(Pid, kill),
+            ok
+    end.
+
+ensure_started() ->
+    case whereis(pmod_uwb) of
+        undefined ->
+            case pmod_uwb:start_link(spi2, []) of
+                {ok, _Pid} ->
+                    configure_uwb(),
+                    ok;
+                {error, {already_started, _Pid}} ->
+                    configure_uwb(),
+                    ok;
+                Other ->
+                    Other
+            end;
+        _Pid ->
+            ok
+    end.
+
 %%% =========================
 %%% PUBLIC API
 %%% =========================
 
 start(AnchorId) when is_integer(AnchorId), AnchorId >= 0, AnchorId =< 255 ->
-    pmod_uwb:start_link(spi2, []),
-    configure_uwb(),
-    io:format("UWB anchor ~p started~n", [AnchorId]),
-    loop(AnchorId).
+    case ensure_started() of
+        ok ->
+            io:format("UWB anchor ~p started~n", [AnchorId]),
+            loop(AnchorId);
+        Error ->
+            Error
+    end.
 
 %%% =========================
 %%% MAIN LOOP
@@ -54,12 +83,15 @@ loop(AnchorId) ->
         {_, <<"POLL:", Seq:8, AnchorId:8>>} ->
             handle_poll(AnchorId, Seq);
 
-        %% POLL for another anchor -> ignore
+        %% POLL for another anchor
         {_, <<"POLL:", Seq:8, OtherAnchorId:8>>} ->
             io:format(
                 "Anchor ~p ignoring POLL seq=~p for anchor ~p~n",
                 [AnchorId, Seq, OtherAnchorId]
             ),
+            ok;
+
+        {error, rxrfto} ->
             ok;
 
         {error, Reason} ->
@@ -81,7 +113,6 @@ handle_poll(AnchorId, Seq) ->
     T2 = ts_norm(T2_0),
 
     %% ---- T3: immediate RESP ----
-    %% Payload:
     %% <<"RESP:", Seq:8, AnchorId:8, T2:40>>
     Resp = <<"RESP:", Seq:8, AnchorId:8, T2:40>>,
     pmod_uwb:transmit(Resp),
@@ -121,10 +152,17 @@ handle_poll(AnchorId, Seq) ->
                     DistanceM = ToF * ?DWT_TIME_UNIT * ?C,
                     DistanceCm = DistanceM * 100.0,
 
+                    %% ---- REPORT ----
+                    %% On encode la distance en entier centi-cm pour éviter les flottants binaires.
+                    %% Ex: 93.41 cm -> 9341
+                    DistanceCentiCm = round(DistanceCm * 100.0),
+                    Report = <<"REPORT:", Seq:8, AnchorId:8, DistanceCentiCm:32/signed>>,
+
+                    pmod_uwb:transmit(Report),
+
                     io:format(
-                        "Anchor ~p seq=~p distance=~.2f cm "
-                        "(T1=~p T2=~p T3=~p T4=~p T5=~p T6=~p)~n",
-                        [AnchorId, Seq, DistanceCm, T1, T2, T3, T4, T5, T6]
+                        "Anchor ~p seq=~p distance=~.2f cm~n",
+                        [AnchorId, Seq, DistanceCm]
                     ),
                     ok
             end;

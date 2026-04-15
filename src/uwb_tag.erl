@@ -9,12 +9,9 @@
     loop_test/2
 ]).
 
--define(C, 299792458).
--define(DWT_TIME_UNIT, 15.65e-12).
-
--define(RETRY_DELAY, 200).
 -define(UUS_TO_DWT_TIME, 65536).
 -define(FINAL_DELAY_UUS, 40000).
+-define(RETRY_DELAY, 200).
 
 -define(TX_ANTD, 16453).
 -define(RX_ANTD, 16453).
@@ -98,20 +95,10 @@ measure_distance(AnchorId, Seq)
 
 loop_test(AnchorId, Seq0) ->
     case measure_distance(AnchorId, Seq0) of
-        %% plus tard, quand on aura REPORT:
-        {ok, DistanceCm, NextSeq} when is_float(DistanceCm) ->
+        {ok, DistanceCm, NextSeq} ->
             io:format(
                 "Tag -> anchor ~p seq=~p distance=~.2f cm~n",
                 [AnchorId, Seq0, DistanceCm]
-            ),
-            timer:sleep(?RETRY_DELAY),
-            loop_test(AnchorId, NextSeq);
-
-        %% protocole actuel: échange OK mais pas de distance côté tag
-        {ok, undefined, NextSeq} ->
-            io:format(
-                "Tag -> anchor ~p seq=~p exchange ok (distance not reported yet)~n",
-                [AnchorId, Seq0]
             ),
             timer:sleep(?RETRY_DELAY),
             loop_test(AnchorId, NextSeq);
@@ -126,11 +113,12 @@ loop_test(AnchorId, Seq0) ->
     end.
 
 %%% =========================
-%%% INTERNAL DS-TWR
+%%% INTERNAL DS-TWR + REPORT
 %%% =========================
 
 do_ranging(AnchorId, Seq) ->
     %% ---- T1: POLL ----
+    %% <<"POLL:", Seq:8, AnchorId:8>>
     Poll = <<"POLL:", Seq:8, AnchorId:8>>,
     pmod_uwb:transmit(Poll),
     #{tx_stamp := T1_0} = pmod_uwb:read(tx_time),
@@ -153,6 +141,7 @@ do_ranging(AnchorId, Seq) ->
 
             T5 = ts_norm(FinalTxTimeRaw + ?TX_ANTD),
 
+            %% <<"FINAL:", Seq:8, AnchorId:8, T1:40, T4:40, T5:40>>
             Final = <<"FINAL:", Seq:8, AnchorId:8, T1:40, T4:40, T5:40>>,
 
             pmod_uwb:write(dx_time, #{dx_time => FinalTxTimeRaw}),
@@ -161,7 +150,8 @@ do_ranging(AnchorId, Seq) ->
                 Final,
                 #tx_opts{
                     txdlys = ?ENABLED,
-                    tx_delay = FinalTxTimeRaw
+                    tx_delay = FinalTxTimeRaw,
+                    wait4resp = ?ENABLED
                 }
             ),
 
@@ -175,8 +165,24 @@ do_ranging(AnchorId, Seq) ->
                 [Seq, AnchorId, T1, T2, T4, T5, T5Real, Diff]
             ),
 
-            %% Pour l'instant: pas encore de REPORT, donc pas de distance ici
-            {ok, undefined, (Seq + 1) band 16#FF};
+            %% ---- WAIT REPORT ----
+            %% IMPORTANT:
+            %% wait4resp a déjà activé RX après le FINAL,
+            %% donc il faut utiliser reception(true).
+            case pmod_uwb:reception(true) of
+                {_, <<"REPORT:", Seq:8, AnchorId:8, DistanceCentiCm:32/signed>>} ->
+                    DistanceCm = DistanceCentiCm / 100.0,
+                    {ok, DistanceCm, (Seq + 1) band 16#FF};
+
+                {_, <<"REPORT:", Seq:8, OtherAnchorId:8, _/binary>>} ->
+                    {error, {wrong_report_anchor, OtherAnchorId}, Seq};
+
+                {error, Reason2} ->
+                    {error, {report_error, Reason2}, Seq};
+
+                _ ->
+                    {error, report_timeout_or_unexpected, Seq}
+            end;
 
         {_, <<"RESP:", Seq:8, OtherAnchorId:8, _/binary>>} ->
             {error, {wrong_anchor, OtherAnchorId}, Seq};
