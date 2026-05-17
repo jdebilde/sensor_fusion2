@@ -10,8 +10,11 @@
     {sync_nodes_mandatory, []},
 
     {sync_nodes_optional, [
-        sensor_fusion@lunelis,
-        sensor_fusion@nav_1
+        sensor_fusion@mandemFC,
+        sensor_fusion@nav_1,
+        sensor_fusion@uwb_1,
+        sensor_fusion@uwb_2,
+        sensor_fusion@uwb_3
     ]},
 
     {sync_nodes_timeout, 5000},

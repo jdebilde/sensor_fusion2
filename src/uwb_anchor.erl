@@ -1,12 +1,12 @@
 -module(uwb_anchor).
 
--export([start/1, stop/0, ensure_started/0, loop/1]).
+-export([start/1, stop/0, ensure_started/0, loop/1, print_delay/0]).
 
 -define(C, 299792458).
 -define(DWT_TIME_UNIT, 15.65e-12).
 
--define(TX_ANTD, 16453).
--define(RX_ANTD, 16453).
+-define(TX_ANTD, 16415).
+-define(RX_ANTD, 16415).
 
 -define(TS_MASK, 16#FFFFFFFFFF).
 -define(TS_WRAP, 16#10000000000).
@@ -135,6 +135,10 @@ handle_poll(AnchorId, Seq) ->
             Treply1 = ts_sub(T3, T2),
             Tround2 = ts_sub(T6, T3),
             Treply2 = ts_sub(T5, T4),
+            io:format(
+                "T2=~p T3=~p diff=~p Delay=~.2f us~n",
+                [T2, T3, Treply1, Treply1 * ?DWT_TIME_UNIT * 1000.0]
+            ),
 
             Den = Tround1 + Tround2 + Treply1 + Treply2,
 
@@ -160,10 +164,10 @@ handle_poll(AnchorId, Seq) ->
 
                     pmod_uwb:transmit(Report),
 
-                    io:format(
-                        "Anchor ~p seq=~p distance=~.2f cm~n",
-                        [AnchorId, Seq, DistanceCm]
-                    ),
+                    % io:format(
+                    %     "Anchor ~p seq=~p distance=~.2f cm~n",
+                    %     [AnchorId, Seq, DistanceCm]
+                    % ),
                     ok
             end;
 
@@ -188,3 +192,6 @@ handle_poll(AnchorId, Seq) ->
             ),
             error
     end.
+
+print_delay() ->
+    io:format("TX_ANTD=~p RX_ANTD=~p ~n", [?TX_ANTD, ?RX_ANTD]).

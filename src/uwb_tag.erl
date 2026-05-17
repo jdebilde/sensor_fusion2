@@ -6,15 +6,19 @@
     ensure_started/0,
     measure_distance/1,
     measure_distance/2,
-    loop_test/2
+    measure_distances/1,
+    measure_distances/2,
+    loop_test/2,
+    test_loop/2,
+    print_delay/0
 ]).
 
 -define(UUS_TO_DWT_TIME, 65536).
--define(FINAL_DELAY_UUS, 40000).
--define(RETRY_DELAY, 200).
+-define(FINAL_DELAY_UUS, 26000).
+% -define(RETRY_DELAY, 50).
 
--define(TX_ANTD, 16453).
--define(RX_ANTD, 16453).
+-define(TX_ANTD, 16415).
+-define(RX_ANTD, 16415).
 
 -define(TS_MASK, 16#FFFFFFFFFF).
 -define(TS_WRAP, 16#10000000000).
@@ -86,11 +90,44 @@ measure_distance(AnchorId) ->
 measure_distance(AnchorId, Seq)
   when is_integer(AnchorId), AnchorId >= 0, AnchorId =< 255,
        is_integer(Seq), Seq >= 0, Seq =< 255 ->
-    case ensure_started() of
-        ok ->
-            do_ranging(AnchorId, Seq);
-        Error ->
-            {error, {start_failed, Error}, Seq}
+        % Start = erlang:monotonic_time(microsecond),
+        Res = do_ranging(AnchorId, Seq),
+        % End = erlang:monotonic_time(microsecond),
+        % io:format(
+        %     "{ anchor : ~p, seq : ~p, dt : ~p}~n",
+        %     [AnchorId, Seq, End - Start]
+        % ),
+        Res.
+    % case ensure_started() of
+    %     ok ->
+    %         Start = erlang:monotonic_time(microsecond),
+    %         Res = do_ranging(AnchorId, Seq),
+    %         End = erlang:monotonic_time(microsecond),
+    %         io:format(
+    %             "{ anchor : ~p, seq : ~p, dt : ~p}~n",
+    %             [AnchorId, Seq, End - Start]
+    %         ),
+    %         Res;
+    %     Error ->
+    %         {error, {start_failed, Error}, Seq}
+    % end.
+
+measure_distances(AnchorIds) when is_list(AnchorIds) ->
+    measure_distances(AnchorIds, 0).
+
+measure_distances(AnchorIds, Seq0) when is_list(AnchorIds) ->
+    measure_distances_loop(AnchorIds, Seq0, []).
+
+measure_distances_loop([], Seq, Acc) ->
+    {ok, lists:reverse(Acc), Seq};
+
+measure_distances_loop([AnchorId | Rest], Seq0, Acc) ->
+    case measure_distance(AnchorId, Seq0) of
+        {ok, DistanceCm, Seq1} ->
+            measure_distances_loop(Rest, Seq1, [{AnchorId, DistanceCm} | Acc]);
+
+        {error, Reason, _SameSeq} ->
+            {error, {anchor_failed, AnchorId, Reason}, Seq0}
     end.
 
 loop_test(AnchorId, Seq0) ->
@@ -100,7 +137,7 @@ loop_test(AnchorId, Seq0) ->
                 "Tag -> anchor ~p seq=~p distance=~.2f cm~n",
                 [AnchorId, Seq0, DistanceCm]
             ),
-            timer:sleep(?RETRY_DELAY),
+            % timer:sleep(?RETRY_DELAY),
             loop_test(AnchorId, NextSeq);
 
         {error, Reason, SameSeq} ->
@@ -108,10 +145,47 @@ loop_test(AnchorId, Seq0) ->
                 "Tag -> anchor ~p seq=~p error: ~p~n",
                 [AnchorId, SameSeq, Reason]
             ),
-            timer:sleep(?RETRY_DELAY),
+            % timer:sleep(?RETRY_DELAY),
             loop_test(AnchorId, SameSeq)
     end.
 
+test_loop(AnchorIds, Seq) when is_list(AnchorIds) ->
+    case measure_all_same_seq(AnchorIds, Seq) of
+        {ok, Results} ->
+            lists:foreach(
+                fun({AnchorId, Dist}) ->
+                    io:format(
+                        "Tag -> anchor ~p seq=~p distance=~.2f cm~n",
+                        [AnchorId, Seq, Dist]
+                    )
+                end,
+                Results
+            ),
+            % timer:sleep(?RETRY_DELAY),
+            test_loop(AnchorIds, (Seq + 1) band 16#FF);
+        {error, _} ->
+            test_loop(AnchorIds, Seq)
+        % {error, Reason} ->
+        %     io:format("Tag seq=~p error: ~p~n", [Seq, Reason]),
+        %     % timer:sleep(?RETRY_DELAY),
+        %     test_loop(AnchorIds, Seq)
+    end.
+
+measure_all_same_seq(AnchorIds, Seq) ->
+    measure_all_same_seq(AnchorIds, Seq, []).
+
+measure_all_same_seq([], _Seq, Acc) ->
+    {ok, lists:reverse(Acc)};
+
+measure_all_same_seq([AnchorId | Rest], Seq, Acc) ->
+    case measure_distance(AnchorId, Seq) of
+        {ok, Dist, _NextSeq} ->
+            %% ignore returned seq, we control it globally
+            measure_all_same_seq(Rest, Seq, [{AnchorId, Dist} | Acc]);
+
+        {error, Reason, _} ->
+            {error, {anchor_failed, AnchorId, Reason}}
+    end.
 %%% =========================
 %%% INTERNAL DS-TWR + REPORT
 %%% =========================
@@ -127,11 +201,12 @@ do_ranging(AnchorId, Seq) ->
     %% ---- WAIT RESP ----
     case pmod_uwb:reception() of
         {_, <<"RESP:", Seq:8, AnchorId:8, T2_0:40>>} ->
-            T2 = ts_norm(T2_0),
+            % T2 = ts_norm(T2_0),
 
             %% ---- T4: receive RESP ----
             #{rx_stamp := T4_0} = pmod_uwb:read(rx_time),
             T4 = ts_norm(T4_0),
+            % io:format("T4=~p now=~p ~n", [T4, pmod_uwb:read(sys_time)]),
 
             %% ---- T5: delayed FINAL ----
             FinalTxTimeRaw =
@@ -155,15 +230,15 @@ do_ranging(AnchorId, Seq) ->
                 }
             ),
 
-            #{tx_stamp := T5Real_0} = pmod_uwb:read(tx_time),
-            T5Real = ts_norm(T5Real_0),
-            Diff = ts_sub(T5Real, T5),
+            % #{tx_stamp := T5Real_0} = pmod_uwb:read(tx_time),
+            % T5Real = ts_norm(T5Real_0),
+            % Diff = ts_sub(T5Real, T5),
 
-            io:format(
-                "Tag seq=~p anchor=~p T1=~p T2=~p T4=~p "
-                "T5(msg)=~p T5(real)=~p diff=~p~n",
-                [Seq, AnchorId, T1, T2, T4, T5, T5Real, Diff]
-            ),
+            % io:format(
+            %     "Tag seq=~p anchor=~p T1=~p T2=~p T4=~p "
+            %     "T5(msg)=~p T5(real)=~p diff=~p~n",
+            %     [Seq, AnchorId, T1, T2, T4, T5, T5Real, Diff]
+            % ),
 
             %% ---- WAIT REPORT ----
             %% IMPORTANT:
@@ -193,3 +268,6 @@ do_ranging(AnchorId, Seq) ->
         _ ->
             {error, resp_timeout_or_unexpected, Seq}
     end.
+
+print_delay() ->
+    io:format("TX_ANTD=~p RX_ANTD=~p ~n", [?TX_ANTD, ?RX_ANTD]).

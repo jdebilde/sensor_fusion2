@@ -9,24 +9,38 @@
 -define(UUS_TO_DWT_TIME, 65536).
 -define(FINAL_DELAY_UUS, 40000).
 
--define(TX_ANTD, 16400).
--define(RX_ANTD, 16400).
+-define(TX_ANTD, 16453).
+-define(RX_ANTD, 16453).
+
+%% DW1000 timestamps are 40-bit
+-define(TS_MASK, 16#FFFFFFFFFF).
+-define(TS_WRAP, 16#10000000000).
+
+%% Delayed TX must be aligned on 512 ticks
+-define(DX_TIME_MASK, 16#FFFFFFFFFFFE00).
 
 -include_lib("grisp/include/pmod_uwb.hrl").
 
-%% Les delayed TX du DW1000 sont quantifiés.
-%% On aligne donc le temps programmé sur 512 ticks.
--define(DX_TIME_MASK, 16#FFFFFFFFFFFE00).
+%%% =========================
+%%% TIMESTAMP HELPERS
+%%% =========================
 
-%%% =========================
-%%% HELPERS
-%%% =========================
+ts_norm(T) ->
+    T band ?TS_MASK.
+
+ts_sub(Newer, Older) when Newer >= Older ->
+    Newer - Older;
+ts_sub(Newer, Older) ->
+    (Newer + ?TS_WRAP) - Older.
 
 align_delayed_tx_time(T) ->
-    T band ?DX_TIME_MASK.
+    ts_norm(T band ?DX_TIME_MASK).
+
+%%% =========================
+%%% INIT / CONFIG
+%%% =========================
 
 configure_uwb() ->
-    %% Réactive les délais d’antenne
     pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
     pmod_uwb:write(lde_if, #{lde_rxantd => ?RX_ANTD}),
     pmod_uwb:set_frame_timeout(16#FFFF).
@@ -61,21 +75,27 @@ do_ranging(Seq) ->
     %% ---- T1: POLL ----
     Poll = <<"POLL:", Seq:8>>,
     pmod_uwb:transmit(Poll),
-    #{tx_stamp := T1} = pmod_uwb:read(tx_time),
+    #{tx_stamp := T1_0} = pmod_uwb:read(tx_time),
+    T1 = ts_norm(T1_0),
 
     %% ---- WAIT RESP ----
     case pmod_uwb:reception() of
-        {_, <<"RESP:", Seq:8, T2:40>>} ->
+        {_, <<"RESP:", Seq:8, T2_0:40>>} ->
+            T2 = ts_norm(T2_0),
+
             %% ---- T4: receive RESP ----
-            #{rx_stamp := T4} = pmod_uwb:read(rx_time),
+            #{rx_stamp := T4_0} = pmod_uwb:read(rx_time),
+            T4 = ts_norm(T4_0),
 
             %% ---- T5: delayed FINAL ----
             FinalTxTimeRaw =
-                align_delayed_tx_time(T4 + (?FINAL_DELAY_UUS * ?UUS_TO_DWT_TIME)),
+                align_delayed_tx_time(
+                    T4 + (?FINAL_DELAY_UUS * ?UUS_TO_DWT_TIME)
+                ),
 
-            %% Timestamp logique à embarquer dans le FINAL
-            %% = temps d'émission programmé + délai d'antenne TX
-            T5 = FinalTxTimeRaw + ?TX_ANTD,
+            %% Timestamp logique à mettre dans FINAL
+            %% = delayed tx time + antenna delay
+            T5 = ts_norm(FinalTxTimeRaw + ?TX_ANTD),
 
             Final = <<"FINAL:", Seq:8, T1:40, T4:40, T5:40>>,
 
@@ -89,11 +109,13 @@ do_ranging(Seq) ->
                 }
             ),
 
-            #{tx_stamp := T5Real} = pmod_uwb:read(tx_time),
+            #{tx_stamp := T5Real_0} = pmod_uwb:read(tx_time),
+            T5Real = ts_norm(T5Real_0),
+            Diff = ts_sub(T5Real, T5),
 
             io:format(
                 "Seq=~p T1=~p T2=~p T4=~p T5(msg)=~p T5(real)=~p diff=~p~n",
-                [Seq, T1, T2, T4, T5, T5Real, T5Real - T5]
+                [Seq, T1, T2, T4, T5, T5Real, Diff]
             ),
             ok;
 
@@ -124,12 +146,12 @@ loop_responder() ->
             io:format("RECEIVE POLL [~p]~n", [Seq]),
             handle_poll(Seq);
 
-        {error, Reason} ->
-            io:format("Reception error: ~p~n", [Reason]),
-            ok;
-
         {_, Other} ->
             io:format("Unexpected frame: ~p~n", [Other]),
+            ok;
+
+        {error, Reason} ->
+            io:format("Reception error: ~p~n", [Reason]),
             ok;
 
         _ ->
@@ -140,26 +162,33 @@ loop_responder() ->
 
 handle_poll(Seq) ->
     %% ---- T2: receive POLL ----
-    #{rx_stamp := T2} = pmod_uwb:read(rx_time),
+    #{rx_stamp := T2_0} = pmod_uwb:read(rx_time),
+    T2 = ts_norm(T2_0),
 
     %% ---- T3: immediate RESP ----
     Resp = <<"RESP:", Seq:8, T2:40>>,
     pmod_uwb:transmit(Resp),
-    #{tx_stamp := T3} = pmod_uwb:read(tx_time),
+    #{tx_stamp := T3_0} = pmod_uwb:read(tx_time),
+    T3 = ts_norm(T3_0),
 
     io:format("Seq=~p T2=~p T3=~p~n", [Seq, T2, T3]),
 
     %% ---- WAIT FINAL ----
     case pmod_uwb:reception() of
-        {_, <<"FINAL:", Seq:8, T1:40, T4:40, T5:40>>} ->
-            %% ---- T6: receive FINAL ----
-            #{rx_stamp := T6} = pmod_uwb:read(rx_time),
+        {_, <<"FINAL:", Seq:8, T1_0:40, T4_0:40, T5_0:40>>} ->
+            T1 = ts_norm(T1_0),
+            T4 = ts_norm(T4_0),
+            T5 = ts_norm(T5_0),
 
-            %% ---- DS-TWR ----
-            Tround1 = T4 - T1,
-            Treply1 = T3 - T2,
-            Tround2 = T6 - T3,
-            Treply2 = T5 - T4,
+            %% ---- T6: receive FINAL ----
+            #{rx_stamp := T6_0} = pmod_uwb:read(rx_time),
+            T6 = ts_norm(T6_0),
+
+            %% ---- DS-TWR with wrap-aware subtraction ----
+            Tround1 = ts_sub(T4, T1),
+            Treply1 = ts_sub(T3, T2),
+            Tround2 = ts_sub(T6, T3),
+            Treply2 = ts_sub(T5, T4),
 
             Den = Tround1 + Tround2 + Treply1 + Treply2,
 

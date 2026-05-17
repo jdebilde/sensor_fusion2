@@ -24,7 +24,8 @@ calibrate() ->
 init(Calibration) ->
     Spec = #{
         name => ?MODULE,
-        iter => 500
+        iter => infinity,
+        timeout => 20
     },
     {ok, Calibration, Spec}.
 

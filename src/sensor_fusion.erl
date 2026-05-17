@@ -13,6 +13,8 @@
 
 %% set the args for the nav and mag modules
 set_args(nav) ->
+    % Cn = e_nav_xytheta_kf:calibrate(),
+    % update_table({{e_nav_xytheta_kf, node()}, Cn});
     Cn = nav:calibrate(),
     Cm = mag:calibrate(),
     update_table({{nav, node()}, Cn}),
@@ -21,9 +23,20 @@ set_args(nav) ->
 %% set the args for the nav3 and e11 modules
 set_args(nav3) ->
     Cn = nav3:calibrate(),
-    R0 = e11:calibrate(element(3, Cn)),
-    update_table({{nav3, node()}, Cn}),
-    update_table({{e11, node()}, R0}).
+    % R0 = e11:calibrate(element(3, Cn)),
+    update_table({{nav3, node()}, Cn});
+    % update_table({{e11, node()}, R0}).
+
+set_args(uwb) ->
+    Anchor1 = {1, 0.0, 0.0},
+    Anchor2 = {2, 2.0, 0.0},
+    % Anchors = [Anchor1, Anchor2],
+    Anchors = [Anchor1],
+    Current = 0,
+    update_table({{uwb, node()}, { Anchors, Current} }).
+
+% set_args(uwb, Anchors) ->
+%     update_table({ {uwb, node()}, {Anchors} }).
 
 
 %% set the args for the sonar module.
@@ -90,7 +103,10 @@ start(_Type, _Args) ->
         sonar ->
             _ = grisp:add_device(uart, pmod_maxsonar),
             pmod_maxsonar:set_mode(single);
-        _ -> % needed when we use make shell
+        uwb ->
+            [grisp_led:color(L, yellow) || L <- [1, 2]],
+            ok;
+        _ ->
             _ = net_kernel:set_net_ticktime(8),
             lists:foreach(fun net_kernel:connect_node/1,
                 application:get_env(kernel, sync_nodes_optional, []))
@@ -110,30 +126,40 @@ node_type() ->
     Host = lists:nthtail(14, atom_to_list(node())),
     IsNav = lists:prefix("nav", Host),
     IsSonar = lists:prefix("sonar", Host),
+    IsUwb = lists:prefix("uwb", Host),
     if
         IsNav -> nav;
         IsSonar -> sonar;
+        IsUwb -> uwb;
         true -> undefined
     end.
 
 
+% launch(nav) ->
+%     io:format("launch(nav)~n"),
+%     % Cn = ets:lookup_element(args, {nav, node()}, 2),
+%     % Cm = ets:lookup_element(args, {mag, node()}, 2),
+%     io:format("Cn~n"),
+%     Cn = ets:lookup_element(args, {nav3, node()}, 2),
+%     % io:format("R0~n"),
+%     % R0 = ets:lookup_element(args, {e11, node()}, 2),
+%     % {ok,_} = hera:start_measure(nav, Cn),
+%     % % {ok,_} = hera:start_measure(mag, Cm),
+%     io:format("nav3~n"),
+%     {ok,_} = hera:start_measure(nav3, Cn),
+%     % % io:format("e11~n"),
+%     % % {ok,_} = hera:start_measure(e11, R0),
+%     % io:format("post_est~n"),
+%     % {ok,_} = hera:start_measure(pos_est, Cn),
+%     % io:format("OK~n"),
+%     ok;
+
 launch(nav) ->
     io:format("launch(nav)~n"),
-    % Cn = ets:lookup_element(args, {nav, node()}, 2),
-    % Cm = ets:lookup_element(args, {mag, node()}, 2),
     io:format("Cn~n"),
     Cn = ets:lookup_element(args, {nav3, node()}, 2),
-    io:format("R0~n"),
-    R0 = ets:lookup_element(args, {e11, node()}, 2),
-    % {ok,_} = hera:start_measure(nav, Cn),
-    % {ok,_} = hera:start_measure(mag, Cm),
     io:format("nav3~n"),
     {ok,_} = hera:start_measure(nav3, Cn),
-    io:format("e11~n"),
-    {ok,_} = hera:start_measure(e11, R0),
-    io:format("post_est~n"),
-    {ok,_} = hera:start_measure(pos_est, Cn),
-    io:format("OK~n"),
     ok;
 
 launch(sonar) ->
@@ -142,6 +168,17 @@ launch(sonar) ->
     {ok,_} = hera:start_measure(sonar, Cs),
     %{ok,_} = hera:start_measure(bilateration, undefined),
     % {ok,_} = hera:start_measure(e10, undefined),
+    ok;
+
+launch(uwb) ->
+    io:format("launch(uwb)~n"),
+    io:format("ensure_started~n"),
+    uwb_tag:ensure_started(),
+    io:format("Anchors_and_current~n"),
+    Anchors_and_current = ets:lookup_element(args, {uwb, node()}, 2),
+    io:format("> ~p ~n", [Anchors_and_current]),
+    io:format("uwb_measure~n"),
+    {ok,_} = hera:start_measure(uwb_measure, Anchors_and_current),
     ok;
 
 launch(_) ->

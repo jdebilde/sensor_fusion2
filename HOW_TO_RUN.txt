@@ -1,0 +1,17 @@
+application:stop(hera).
+application:start(hera).
+sensor_fusion:launch().
+hera_data:get(e_uwb_2d, 'sensor_fusion@uwb_1').
+
+sensor_fusion:update_code(sensor_fusion, e_uwb_2d).
+sensor_fusion:update_code(sensor_fusion, sensor_fusion).
+sensor_fusion:update_code(sensor_fusion, uwb_tag).
+sensor_fusion:update_code(sensor_fusion, uwb_anchor).
+sensor_fusion:update_code(sensor_fusion, uwb_measure).
+
+application:stop(hera).
+application:start(hera).
+sensor_fusion:set_args(nav3).
+sensor_fusion:set_args(uwb).
+sensor_fusion:launch().
+hera_data:get(uwb_measure, 'sensor_fusion@uwb_3').

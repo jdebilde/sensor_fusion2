@@ -39,7 +39,6 @@ init(C) ->
 
 
 measure(C=#cal{gyro={GBx,GBy,GBz}, mag={MBx,MBy,MBz}}) ->
-    io:format("Ne fonctionne pas! ~n"),
     % accelerometer, G-force
     % Gyro, degrees per second
     [Ax,Ay,Az, Gx,Gy,Gz] = pmod_nav:read(acc, [

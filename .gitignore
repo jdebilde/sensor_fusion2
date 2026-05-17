@@ -31,3 +31,5 @@ eeprom_som.dat
 rebar.lock
 python
 liveView/octave-workspace
+prompt.txt
+OURexperiments
