@@ -1,5 +1,14 @@
 # Experiment 1
-Facing to 0 deg
+* The tag is facing the anchor (looking south)
+* The anchor is facing the tag (looking north)
+
+# Experiment 2
+* The tag is facing the anchor (looking south)
+* The anchor is facing right  (looking east)
+
+# Experiment 3
+* The tag is facing the anchor (looking south)
+* The anchor is facing opposite (looking south)
 
 ## uwb_3 with uwb_1
 
@@ -82,8 +91,11 @@ On uwb_2:
 uwb_anchor:start(2).
 ```
 
-# Experiment 2
-Facing to 90 deg
+These files contains results form `uwb_measure` so **distance in cm to anchor i**.
 
-# experiment 3
-Facing to 180 deg
+# Experiment 4
+Test uwb alone!!
+
+# experiment 5
+We use `uwb_nav_ekf` to measure different static positions and try moving along 
+the table. We have here postion on **position x, position y, velocity x, velocity y**.
