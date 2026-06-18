@@ -16,7 +16,8 @@
 init({Anchors, Current}) ->
     Spec = #{
         name => ?MODULE,
-        iter => infinity
+        iter => infinity,
+        timeout => 0
     },
     State = #state{
         anchors = Anchors,
@@ -28,7 +29,6 @@ measure(State = #state{
     anchors = Anchors,
     current = Current
 }) ->
-    % erlang:display({success, Anchors, Current}),
     N = length(Anchors),
     Index = (Current rem N) + 1,
     {AnchorId, X, Y} = lists:nth(Index, Anchors),
@@ -38,6 +38,9 @@ measure(State = #state{
     case uwb_tag:measure_distance(AnchorId) of
         {ok, DistanceCm, _} ->
             {ok, [AnchorId, DistanceCm, X, Y], NextState};
+
+        % {error, Reason, Seq1} ->
+        %     {ok, [AnchorId, error, Reason, X, Y], NextState};
 
         _ ->
             {undefined, NextState}

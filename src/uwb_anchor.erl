@@ -83,27 +83,30 @@ loop(AnchorId) ->
         {_, <<"POLL:", Seq:8, AnchorId:8>>} ->
             handle_poll(AnchorId, Seq);
 
-        %% POLL for another anchor
-        {_, <<"POLL:", Seq:8, OtherAnchorId:8>>} ->
-            io:format(
-                "Anchor ~p ignoring POLL seq=~p for anchor ~p~n",
-                [AnchorId, Seq, OtherAnchorId]
-            ),
-            ok;
-
-        {error, rxrfto} ->
-            ok;
-
-        {error, Reason} ->
-            io:format("Anchor ~p reception error: ~p~n", [AnchorId, Reason]),
-            ok;
-
-        {_, Other} ->
-            io:format("Anchor ~p unexpected frame: ~p~n", [AnchorId, Other]),
-            ok;
-
         _ ->
             ok
+
+        % %% POLL for another anchor
+        % {_, <<"POLL:", Seq:8, OtherAnchorId:8>>} ->
+        %     io:format(
+        %         "Anchor ~p ignoring POLL seq=~p for anchor ~p~n",
+        %         [AnchorId, Seq, OtherAnchorId]
+        %     ),
+        %     ok;
+
+        % {error, rxrfto} ->
+        %     ok;
+
+        % {error, Reason} ->
+        %     io:format("Anchor ~p reception error: ~p~n", [AnchorId, Reason]),
+        %     ok;
+
+        % {_, Other} ->
+        %     io:format("Anchor ~p unexpected frame: ~p~n", [AnchorId, Other]),
+        %     ok;
+
+        % _ ->
+        %     ok
     end,
     loop(AnchorId).
 
@@ -135,10 +138,10 @@ handle_poll(AnchorId, Seq) ->
             Treply1 = ts_sub(T3, T2),
             Tround2 = ts_sub(T6, T3),
             Treply2 = ts_sub(T5, T4),
-            io:format(
-                "T2=~p T3=~p diff=~p Delay=~.2f us~n",
-                [T2, T3, Treply1, Treply1 * ?DWT_TIME_UNIT * 1000.0]
-            ),
+            % io:format(
+            %     "T2=~p T3=~p diff=~p Delay=~.2f us~n",
+            %     [T2, T3, Treply1, Treply1 * ?DWT_TIME_UNIT * 1000.0]
+            % ),
 
             Den = Tround1 + Tround2 + Treply1 + Treply2,
 

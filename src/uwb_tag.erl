@@ -14,7 +14,7 @@
 ]).
 
 -define(UUS_TO_DWT_TIME, 65536).
--define(FINAL_DELAY_UUS, 26000).
+-define(FINAL_DELAY_UUS, 30000).
 % -define(RETRY_DELAY, 50).
 
 -define(TX_ANTD, 16415).

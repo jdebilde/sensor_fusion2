@@ -6,6 +6,7 @@
 -export([launch/0, launch_all/0, stop_all/0]).
 -export([update_code/2, update_code/3]).
 -export([start/2, stop/1]).
+-export([print_debug/0]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% API
@@ -28,10 +29,9 @@ set_args(nav3) ->
     % update_table({{e11, node()}, R0}).
 
 set_args(uwb) ->
-    Anchor1 = {1, 0.0, 0.0},
-    Anchor2 = {2, 2.0, 0.0},
-    % Anchors = [Anchor1, Anchor2],
-    Anchors = [Anchor1],
+    Anchor1 = {1, 2.30, 0.05},
+    Anchor2 = {2, 0.10, 0.05},
+    Anchors = [Anchor1, Anchor2],
     Current = 0,
     update_table({{uwb, node()}, { Anchors, Current} }).
 
@@ -170,6 +170,17 @@ launch(sonar) ->
     % {ok,_} = hera:start_measure(e10, undefined),
     ok;
 
+% launch(uwb) ->
+%     io:format("launch(uwb)~n"),
+%     io:format("ensure_started~n"),
+%     uwb_tag:ensure_started(),
+%     io:format("Anchors_and_current~n"),
+%     Anchors_and_current = ets:lookup_element(args, {uwb, node()}, 2),
+%     io:format("> ~p ~n", [Anchors_and_current]),
+%     io:format("uwb_measure~n"),
+%     {ok,_} = hera:start_measure(uwb_measure, Anchors_and_current),
+%     ok;
+
 launch(uwb) ->
     io:format("launch(uwb)~n"),
     io:format("ensure_started~n"),
@@ -179,6 +190,15 @@ launch(uwb) ->
     io:format("> ~p ~n", [Anchors_and_current]),
     io:format("uwb_measure~n"),
     {ok,_} = hera:start_measure(uwb_measure, Anchors_and_current),
+    NavNode = 'sensor_fusion@nav_3',
+    UwbNode = 'sensor_fusion@uwb_3',
+    % InitialPos = {0.90, 1.65},
+    % InitialPos = {1.50, 1.65},
+    % InitialPos = {1.50, 3.15},
+    InitialPos = {0.90, 3.15},
+    AccBias = {0, 0},
+    io:format("uwb_nav_ekf~n"),
+    {ok,_} = hera:start_measure(uwb_nav_ekf, {InitialPos, NavNode, UwbNode, AccBias}),
     ok;
 
 launch(_) ->
@@ -199,3 +219,8 @@ update_table(Object) ->
     io:format("update_table~n"),
     _ = rpc:multicall(ets, insert, [args, Object]),
     ok.
+
+
+print_debug() ->
+    {ok, Bin} = file:read_file("uwb_nav_ekf_debug.log"),
+    io:format("~s", [Bin]).
