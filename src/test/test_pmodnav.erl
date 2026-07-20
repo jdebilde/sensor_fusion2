@@ -5,7 +5,8 @@
     print_acc_gyro/1,
     loop_print_acc_gyro/2,
     print_acc/2,
-    print_gyro/3
+    print_gyro/3,
+    loop_print_acc_angle/2
 ]).
 
 -define(G, 9.80665). % m/s^2
@@ -22,7 +23,9 @@
 calibrate() ->
     io:format("nav3 (gyro): Place the pmod_nav flat and still!~n"),
     % Gyro, degrees per second.
-    [Gx, Gy, Gz] = calibrate(acc, [out_x_g, out_y_g, out_z_g], 500),
+    % [Gx, Gy, Gz] = calibrate(acc, [out_x_g, out_y_g, out_z_g], 500),
+    [Gx, Gy, Gz] = [0, 0, 0],
+    io:format("calibrate: (~p, ~p, ~p)~n", [Gx, Gy, Gz]),
     #cal{gyro = {Gx, Gy, Gz}}.
 
 
@@ -46,7 +49,7 @@ loop_print_acc_gyro(N, C) when is_integer(N), N > 0 ->
     % timer:sleep(?LOOP_SLEEP_MS),
     loop_print_acc_gyro(N - 1, C).
 
-
+% test_pmodnav:print_acc(acc, [out_x_xl, out_y_xl, out_z_xl]).
 print_acc(Comp, Registers) ->
     [Ax, Ay, Az] = pmod_nav:read(Comp, Registers),
     io:format(
@@ -55,7 +58,7 @@ print_acc(Comp, Registers) ->
         [Ax, Ay, Az, Ax * ?G, Ay * ?G, Az * ?G]
     ).
 
-
+% test_pmodnav:print_gyro(acc, [out_x_g, out_y_g, out_z_g]).
 print_gyro(Comp, Registers, C = #cal{}) ->
     [Gx, Gy, Gz] = pmod_nav:read(Comp, Registers),
     print_gyro_values(C, Gx, Gy, Gz).
@@ -89,6 +92,68 @@ print_gyro_values(#cal{gyro = {GBx, GBy, GBz}}, Gx, Gy, Gz) ->
         "{\"gyro\":{\"x\":~p,\"y\":~p,\"z\":~p},"
         "\"gyro_corrected\":{\"x\":~p,\"y\":~p,\"z\":~p}}~n",
         [Gx, Gy, Gz, Gx - GBx, Gy - GBy, Gz - GBz]
+    ).
+
+
+
+
+loop_print_acc_angle(0, _C) ->
+    ok;
+loop_print_acc_angle(N, C) when is_integer(N), N > 0 ->
+    [Ax, Ay, Az] = pmod_nav:read(acc, [out_x_xl, out_y_xl, out_z_xl]),
+    print_acc_angle(Ax, Ay, Az),
+    timer:sleep(?LOOP_SLEEP_MS),
+    loop_print_acc_angle(N - 1, C).
+
+round3(X) ->
+    round(X * 1000) / 1000.
+
+rad2deg(Rad) ->
+    Rad * 180 / math:pi().
+
+print_acc_angle(Ax0, Ay0, Az0) ->
+    %% Sensor axes:
+    %%   X -> actual Z
+    %%   Y -> actual X
+    %%   Z -> actual Y
+    X = Ay0,
+    Y = Az0,
+    Z = Ax0,
+
+    Mag = math:sqrt(X * X + Y * Y + Z * Z),
+
+    Roll =
+        case Mag of
+            0 -> 0;
+            _ -> rad2deg(math:atan2(Y, Z))
+        end,
+
+    Pitch =
+        case Mag of
+            0 -> 0;
+            _ -> rad2deg(math:atan2(-X, math:sqrt(Y * Y + Z * Z)))
+        end,
+
+    Tilt =
+        case Mag of
+            0 ->
+                0;
+            _ ->
+                Cos = max(-1.0, min(1.0, Z / Mag)),
+                rad2deg(math:acos(Cos))
+        end,
+
+    io:format(
+        "{\"acc\":{\"x\":~.3f,\"y\":~.3f,\"z\":~.3f},"
+        "\"angle\":{\"roll\":~.3f,\"pitch\":~.3f,\"tilt\":~.3f}}~n",
+        [
+            round3(Ax0),
+            round3(Ay0),
+            round3(Az0),
+            round3(Roll),
+            round3(Pitch),
+            round3(Tilt)
+        ]
     ).
 
 

@@ -1,4 +1,4 @@
--module(nav3).
+-module(nav3_acc_gyro_mag).
 
 -behaviour(hera_measure).
 
@@ -6,30 +6,23 @@
 -export([init/1, measure/1]).
 
 -record(cal, {
+    acc,
     gyro,
-    mag,
     t0 = undefined
 }).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% API
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 calibrate() ->
-    io:format("nav3 (acc): Calibrating... Do not move the pmod_nav!!~n"),
+    io:format("nav3_acc_gyro_mag (acc): Calibrating... Do not move the pmod_nav!!~n"),
     [Ax,Ay,Az] = calibrate(acc, [out_x_xl, out_y_xl, out_z_xl], 300),
-    io:format("nav3 (acc): ~p,~p,~p,~n", [Ax,Ay,Az]),
-    io:format("nav3 (gyro/mag): Place de pmod_nav flat and still!~n"),
-    % Gyro, degrees per second
+    io:format("nav3_acc_gyro_mag (acc): ~p,~p,~p [g]~n", [Ax,Ay,Az]),
+    io:format("nav3_acc_gyro_mag (gyro): Place de pmod_nav flat and still!~n"),
     [Gx,Gy,Gz] = calibrate(acc, [out_x_g,out_y_g,out_z_g], 300),
-    [Mx1,My1,Mz1] = calibrate(mag, [out_x_m, out_y_m, out_z_m], 10),
-    _ = io:get_line("nav3 (mag): Turn the pmod_nav 180° around the z axis then press enter"),
-    [Mx2,My2,_] = calibrate(mag, [out_x_m, out_y_m, out_z_m], 10),
-    _ = io:get_line("nav3 (mag): Turn the pmod_nav 180° around the x axis then press enter"),
-    [_,_,Mz2] = calibrate(mag, [out_x_m, out_y_m, out_z_m], 10),
-    BiasX = 0.5*(Mx1+Mx2),
-    BiasY = 0.5*(My1+My2),
-    BiasZ = 0.5*(Mz1+Mz2),
-    #cal{gyro={Gx,Gy,Gz}, mag={BiasX,BiasY,BiasZ}}.
+    io:format("nav3_acc_gyro_mag (gyro): ~p,~p,~p [deg/s]~n", [Gx,Gy,Gz]),
+    #cal{acc=[Ax,Ay,Az], gyro=[Gx,Gy,Gz]}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Callbacks
@@ -57,14 +50,15 @@ measure(C = #cal{t0 = T0}) ->
                 (T1 - T0) / 1000000.0
         end,
 
-    % [Ax, Ay, Az] = pmod_nav:read(acc, [out_x_xl, out_y_xl, out_z_xl]),
     [Ax,Ay,Az, Gx,Gy,Gz] = pmod_nav:read(acc, [
         out_x_xl,out_y_xl,out_z_xl,
         out_x_g,out_y_g,out_z_g]),
-    Acc = [Ax, Ay, -Az],
-    Gyro = [Gx, Gy, Gz],
+    Acc = subtract([Ax, Ay, Az], C#cal.acc),
+    Gyro = subtract([Gx, Gy, Gz], C#cal.gyro),
+    %% acc #{xl_unit => g} => m/s^2
     [Axx, Ayy, Azz] = scale(Acc, 9.81),
-    [Gxx, Gyy, Gzz] = scale(Gyro, math:pi()/180),
+    %% gyro #{g_unit => dps} => dps
+    [Gxx, Gyy, Gzz] = Gyro,
     Data = [T1, Dt, Axx, Ayy, Azz, Gxx, Gyy, Gzz],
     C1 = C#cal{t0 = T1},
     {ok, Data, C1}.
@@ -82,3 +76,7 @@ calibrate(Comp, Registers, N) ->
         || _ <- lists:seq(1,N)],
     {X, Y, Z} = lists:unzip3(Data),
     [lists:sum(X)/N, lists:sum(Y)/N, lists:sum(Z)/N].
+
+
+subtract([X,Y,Z], [X0,Y0,Z0]) ->
+    [X-X0, Y-Y0, Z-Z0].

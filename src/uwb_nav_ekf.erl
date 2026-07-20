@@ -78,8 +78,10 @@ debug(Fmt, Args) ->
 %% Example:
 %%   {-0.198, 0.404}
 %%
+% init({{Px0, Py0}, NavNode, UwbNode, AccBias}) ->
+%     init({{Px0, Py0}, NavNode, UwbNode, AccBias, 1.0, 0.10});
 init({{Px0, Py0}, NavNode, UwbNode, AccBias}) ->
-    init({{Px0, Py0}, NavNode, UwbNode, AccBias, 1.0, 0.10});
+    init({{Px0, Py0}, NavNode, UwbNode, AccBias, 2, 0.2});
 
 init({{Px0, Py0}, NavNode, UwbNode, AccBias, SigmaAcc, SigmaUwb}) ->
     Spec = #{
@@ -96,11 +98,17 @@ init({{Px0, Py0}, NavNode, UwbNode, AccBias, SigmaAcc, SigmaUwb}) ->
     ]),
 
     %% Position initially known reasonably well, velocity less known.
+    % P0 = mat:diag([
+    %     0.05,
+    %     0.05,
+    %     1.0,
+    %     1.0
+    % ]),
     P0 = mat:diag([
-        0.05,
-        0.05,
-        1.0,
-        1.0
+        0.0025,
+        0.0025,
+        0.10,
+        0.10
     ]),
 
     State = #state{
@@ -129,8 +137,7 @@ measure(State0) ->
     {State2, DidUpdate} = try_update_with_uwb(State1),
     % debug("ok", []),
 
-    % case DidPredict orelse DidUpdate of
-    case DidUpdate of
+    case DidPredict orelse DidUpdate of
         true ->
             % debug("State (~p, ~p)", [DidPredict, DidUpdate]),
             {Px, Py, Vx, Vy} = state_to_tuple(State2#state.x),
@@ -156,8 +163,9 @@ try_predict_with_nav(State = #state{
             case is_new_seq(Seq, LastSeq) of
                 true ->
                     % debug("is_new_seq(~p, ~p): TRUE", [Seq, LastSeq]),
-                    NowUs = erlang:monotonic_time(microsecond),
-                    predict_from_nav_sample(Seq, NowUs, Data, State);
+                    % NowUs = erlang:monotonic_time(microsecond),
+                    % predict_from_nav_sample(Seq, NowUs, Data, State);
+                    predict_from_nav_sample(Seq, _Timestamp, Data, State);
 
                 false ->
                     % debug("is_new_seq(~p, ~p): FALSE", [Seq, LastSeq]),
@@ -169,19 +177,19 @@ try_predict_with_nav(State = #state{
     end.
 
 
-predict_from_nav_sample(Seq, NowUs, Data, State = #state{
+predict_from_nav_sample(Seq, NowMs, Data, State = #state{
     last_nav_t_us = undefined
 }) ->
     %% First NAV sample: initialize timing, but do not predict yet.
     %% Otherwise the first dt could be arbitrary.
     % debug("PREDICT_from_nav_sample(undefined)", []),
     _ = Data,
-    {State#state{last_nav_t_us = NowUs, last_nav_seq = Seq}, false};
+    {State#state{last_nav_t_us = NowMs, last_nav_seq = Seq}, false};
 
-predict_from_nav_sample(Seq, NowUs, Data, State = #state{
+predict_from_nav_sample(Seq, NowMs, Data, State = #state{
     x = X0,
     p = P0,
-    last_nav_t_us = LastUs,
+    last_nav_t_us = LastMs,
     acc_bias = {BiasX, BiasY},
     sigma_acc = SigmaAcc
 }) ->
@@ -193,7 +201,8 @@ predict_from_nav_sample(Seq, NowUs, Data, State = #state{
     % debug("PREDICT_from_nav_sample(true)", []),
     [_AccVertical, APlaneXRaw, APlaneYRaw | _] = Data,
     % debug("PREDICT_from_nav_sample(true) 1", []),
-    Dt0 = (NowUs - LastUs) / 1000000.0,
+    % Dt0 = (NowUs - LastUs) / 1000000.0,
+    Dt0 = (NowMs - LastMs) / 1000.0,
     % debug("PREDICT_from_nav_sample(true) 2", []),
     Dt = clamp_dt(Dt0),
     % debug("PREDICT_from_nav_sample(true) 3", []),
@@ -207,17 +216,19 @@ predict_from_nav_sample(Seq, NowUs, Data, State = #state{
     % debug("EKF_predict", []),
     {X1, P1} = hera2:ekf_predict({X0, P0}, FFun, JFFun, Q),
     % debug("should return true", []),
-    {State#state{x = X1, p = P1, last_nav_t_us = NowUs, last_nav_seq = Seq}, true}.
+    {State#state{x = X1, p = P1, last_nav_t_us = NowMs, last_nav_seq = Seq}, true}.
 
 
 nav_prediction_model(Dt, Ax, Ay, SigmaAcc) ->
     Dt2 = Dt * Dt,
 
+    Damp = math:exp(-Dt / 1.0),
+
     F = mat:matrix([
-        [1.0, 0.0, Dt,  0.0],
-        [0.0, 1.0, 0.0, Dt ],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0]
+        [1.0, 0.0, Dt,   0.0],
+        [0.0, 1.0, 0.0,  Dt ],
+        [0.0, 0.0, Damp, 0.0],
+        [0.0, 0.0, 0.0,  Damp]
     ]),
 
     B = mat:matrix([
@@ -264,6 +275,7 @@ try_update_with_uwb(State = #state{
         [{_Node, Seq, _Timestamp, Data}] ->
             case is_new_seq(Seq, LastSeq) of
                 true ->
+                    % debug("uwb,~p,~p,~p,~p", [Seq, _Timestamp, Data]),
                     update_from_uwb_sample(Seq, Data, State);
 
                 false ->

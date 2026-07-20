@@ -74,11 +74,6 @@ ekf_update({Xp, Pp}, HFun, JHFun, R, Z) ->
 
     %% Covariance correction:
     %% P1 = Pp - K H Pp
-    %%
-    %% This is the same form as kalman.erl.
-    %% Later, if numerical stability becomes a problem, you can replace it
-    %% with Joseph form:
-    %% P1 = (I-KH)Pp(I-KH)^T + K R K^T
     P1 = mat:'-'(Pp, mat:eval([K, '*', Jh, '*', Pp])),
 
     {X1, P1}.

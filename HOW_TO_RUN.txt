@@ -3,15 +3,39 @@ application:start(hera).
 sensor_fusion:launch().
 hera_data:get(e_uwb_2d, 'sensor_fusion@uwb_1').
 
+sensor_fusion:update_code(sensor_fusion, nav3).
 sensor_fusion:update_code(sensor_fusion, e_uwb_2d).
+sensor_fusion:update_code(sensor_fusion, uwb_nav_ekf).
 sensor_fusion:update_code(sensor_fusion, sensor_fusion).
 sensor_fusion:update_code(sensor_fusion, uwb_tag).
 sensor_fusion:update_code(sensor_fusion, uwb_anchor).
 sensor_fusion:update_code(sensor_fusion, uwb_measure).
+sensor_fusion:update_code(sensor_fusion, test_pmodnav).
 
 application:stop(hera).
 application:start(hera).
+sensor_fusion:set_args(nav2).
 sensor_fusion:set_args(nav3).
 sensor_fusion:set_args(uwb).
 sensor_fusion:launch().
 hera_data:get(uwb_measure, 'sensor_fusion@uwb_3').
+
+hera_data:get(nav3, 'sensor_fusion@nav_3').
+hera_data:get(uwb_nav_ekf, 'sensor_fusion@uwb_3').
+
+
+{ok, Bin} = file:read_file("uwb_nav_ekf_debug.log").
+io:format("~s", [Bin]).
+file:delete("uwb_nav_ekf_debug.log").
+
+
+
+Pour les problemes de connexion.
+
+node().
+nodes().
+net_adm:ping('sensor_fusion@nav_3').
+rpc:multicall(nodes(), sensor_fusion, module_info, [exports]).
+sensor_fusion:connect_nodes().
+sensor_fusion:update_code(sensor_fusion, sensor_fusion).
+sensor_fusion:check_remote_module(sensor_fusion).
