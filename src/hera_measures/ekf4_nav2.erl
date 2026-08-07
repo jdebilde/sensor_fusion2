@@ -1,0 +1,348 @@
+-module(ekf4_nav2).
+
+-behaviour(hera_measure).
+
+-export([calibrate/0]).
+-export([
+    init/1,
+    measure/1
+]).
+
+-record(cal, {
+    acc,
+    gyro,
+    t0 = undefined
+}).
+
+-record(state, {
+    %% Calibration NAV
+    cal,
+    %% EKF state: [px, py, vx, vy]
+    x,
+    p,
+    %% For the zupt
+    stopped_count = 0,
+    %% Temps de la dernière itération du filtre
+    last_filter_time_ms = undefined
+}).
+
+%% Bruit d'accélération utilisée comme entrée du modèle.
+%% sigma pour la matrice Q
+-define(SIGMA_ACCEL_INPUT, 0.50).
+
+%% For the zupt
+-define(ACC_STOP_THRESHOLD, 0.08).
+-define(GYRO_STOP_THRESHOLD, 0.250).
+-define(STOPPED_MIN_COUNT, 5).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% DEBUG
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-define(DEBUG, false).
+-define(DEBUG_FILE, "uwb_nav_ekf_debug.log").
+
+debug(Fmt, Args) ->
+    case ?DEBUG of
+        true ->
+            Line = io_lib:format(
+                "[nav2_ekf2] [~p] " ++ Fmt ++ "~n",
+                [erlang:monotonic_time(millisecond) | Args]
+            ),
+            file:write_file(?DEBUG_FILE, Line, [append]);
+        false ->
+            ok
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% API / Hera callbacks
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+calibrate() ->
+    io:format("ekf4_nav2 (acc): Calibrating... Do not move the pmod_nav!!~n"),
+    [Ax,Ay,Az] = calibrate(acc, [out_x_xl, out_y_xl, out_z_xl], 300),
+    io:format("ekf4_nav2 (acc): ~p,~p,~p [g]~n", [Ax,Ay,Az]),
+    io:format("ekf4_nav2 (gyro): Calibrating... Do not move the pmod_nav!!~n"),
+    [Gx,Gy,Gz] = calibrate(acc, [out_x_g,out_y_g,out_z_g], 300),
+    io:format("ekf4_nav2 (gyro): ~p,~p,~p [deg/s]~n", [Gx,Gy,Gz]),
+    #cal{acc=[Ax,Ay,Az], gyro=[Gx,Gy,Gz]}.
+
+init(Cal) ->
+    Spec = #{
+        name => ?MODULE,
+        iter => infinity,
+        timeout => 0
+    },
+
+    X0 = mat:matrix([
+        [0.0], %% px
+        [0.0], %% py
+        [0.0], %% vx
+        [0.0]  %% vy
+    ]),
+
+    P0 = mat:diag([
+        1.0e-6, %% px
+        1.0e-6, %% py
+        1.0e-4, %% vx
+        1.0e-4  %% vy
+    ]),
+
+    NowMs = erlang:monotonic_time(millisecond),
+
+    State = #state{
+        cal = Cal,
+        x = X0,
+        p = P0,
+        stopped_count = 0,
+        last_filter_time_ms = NowMs
+    },
+
+    debug("Init", []),
+
+    {ok, State, Spec}.
+
+
+measure(State0 = #state{
+    cal = Cal,
+    x = X0,
+    p = P0,
+    last_filter_time_ms = LastFilterTimeMs
+}) ->
+    NowMs = erlang:monotonic_time(millisecond),
+    Dt = filter_dt(LastFilterTimeMs, NowMs),
+
+    [Ax, Ay, Az, Gx, Gy, Gz] = read_nav2(Cal),
+
+    %% Si le Pmod NAV est vertical :
+    %% Ay et Az sont les accélérations horizontales.
+    %% AccX = -Ay,
+    %% AccY = Az,
+
+    %% Si le Pmod NAV est horizontal :
+    %% Ax et Ay sont les accélérations horizontales.
+    AccX = Ay,
+    AccY = Ax,
+
+    StoppedRaw = is_stopped(Ax, Ay, Az, Gx, Gy, Gz),
+
+    {StateAfterStopCount, Stopped} =
+        update_stopped_count(State0, StoppedRaw),
+
+    {XPred, PPred} = predict_4state(X0, P0, Dt, AccX, AccY),
+
+    {X1, P1} =
+        case Stopped of
+            true ->
+                apply_zupt_4state(XPred, PPred);
+            false ->
+                {XPred, PPred}
+        end,
+
+    StoppedInt = bool_to_int(Stopped),
+
+    State1 = StateAfterStopCount#state{
+        x = X1,
+        p = P1,
+        last_filter_time_ms = NowMs
+    },
+
+    [Spx, Spy, Svx, Svy] = state_to_list(X1),
+
+    {ok, [Spx, Spy, Svx, Svy, StoppedInt, NowMs, Dt, Ax, Ay, Az, Gx, Gy, Gz], State1}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% EKF 4 états
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+predict_4state(X0, P0, Dt, AccX, AccY) ->
+    Sigma2 = ?SIGMA_ACCEL_INPUT * ?SIGMA_ACCEL_INPUT,
+    Dt2 = Dt * Dt,
+
+    %% Bruit de processus causé par l'incertitude sur l'accélération.
+    Q = mat:matrix([
+        [0.25 * Dt2 * Dt2 * Sigma2, 0.0, 0.5 * Dt * Dt2 * Sigma2, 0.0],
+        [0.0, 0.25 * Dt2 * Dt2 * Sigma2, 0.0, 0.5 * Dt * Dt2 * Sigma2],
+        [0.5 * Dt * Dt2 * Sigma2, 0.0, Dt2 * Sigma2, 0.0],
+        [0.0, 0.5 * Dt * Dt2 * Sigma2, 0.0, Dt2 * Sigma2]
+    ]),
+
+    %% Fonction de prédiction non-linéaire/affine :
+    %% x' = f(x, u)
+    %% Ici u = [AccX, AccY] est capturé par la closure Erlang.
+    FFun =
+        fun(X) ->
+            Px0 = mat:get(1, 1, X),
+            Py0 = mat:get(2, 1, X),
+            Vx0 = mat:get(3, 1, X),
+            Vy0 = mat:get(4, 1, X),
+
+            Px1 = Px0 + Vx0 * Dt + 0.5 * AccX * Dt2,
+            Py1 = Py0 + Vy0 * Dt + 0.5 * AccY * Dt2,
+            Vx1 = Vx0 + AccX * Dt,
+            Vy1 = Vy0 + AccY * Dt,
+
+            mat:matrix([
+                [Px1],
+                [Py1],
+                [Vx1],
+                [Vy1]
+            ])
+        end,
+
+    %% Jacobien de f par rapport à l'état x.
+    %% L'accélération est une entrée externe, donc elle n'apparaît pas
+    %% dans le Jacobien par rapport à x.
+    JFFun =
+        fun(_X) ->
+            mat:matrix([
+                [1.0, 0.0, Dt,  0.0],
+                [0.0, 1.0, 0.0, Dt],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0]
+            ])
+        end,
+
+    hera2:ekf_predict({X0, P0}, FFun, JFFun, Q).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% ZUPT 4 états
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+apply_zupt_4state(X, P) ->
+    [Px, Py, _Vx, _Vy] = state_to_list(X),
+
+    X1 = mat:matrix([
+        [Px],
+        [Py],
+        [0.0],
+        [0.0]
+    ]),
+
+    %% On garde l'incertitude de position.
+    %% On réduit l'incertitude sur vx/vy.
+    %% On coupe les corrélations position-vitesse pour éviter un saut de position.
+    P1 = mat:matrix([
+        [mat:get(1, 1, P), 0.0, 0.0, 0.0],
+        [0.0, mat:get(2, 2, P), 0.0, 0.0],
+        [0.0, 0.0, 1.0e-5, 0.0],
+        [0.0, 0.0, 0.0, 1.0e-5]
+    ]),
+
+    {X1, P1}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Helpers
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+state_to_list(X) ->
+    [
+        mat:get(1, 1, X),
+        mat:get(2, 1, X),
+        mat:get(3, 1, X),
+        mat:get(4, 1, X)
+    ].
+
+
+% is_new_seq(_Seq, undefined) ->
+%     true;
+% is_new_seq(Seq, LastSeq) ->
+%     Seq =/= LastSeq.
+
+
+clamp_dt(Dt) when Dt =< 0.0 ->
+    0.004;
+clamp_dt(Dt) when Dt > 0.1 ->
+    0.1;
+clamp_dt(Dt) ->
+    Dt.
+
+
+is_stopped(Ax, Ay, Az, Gx, Gy, Gz) ->
+    abs_float(Ax) =< ?ACC_STOP_THRESHOLD andalso
+    abs_float(Ay) =< ?ACC_STOP_THRESHOLD andalso
+    abs_float(Az) =< ?ACC_STOP_THRESHOLD andalso
+    abs_float(Gx) =< ?GYRO_STOP_THRESHOLD andalso
+    abs_float(Gy) =< ?GYRO_STOP_THRESHOLD andalso
+    abs_float(Gz) =< ?GYRO_STOP_THRESHOLD.
+
+
+update_stopped_count(State = #state{stopped_count = Count}, StoppedRaw) ->
+    Count1 =
+        case StoppedRaw of
+            true ->
+                Count + 1;
+            false ->
+                0
+        end,
+
+    Stopped = Count1 >= ?STOPPED_MIN_COUNT,
+
+    {State#state{stopped_count = Count1}, Stopped}.
+
+
+% stopped_int(#state{stopped_count = Count}) ->
+%     case Count >= ?STOPPED_MIN_COUNT of
+%         true -> 1;
+%         false -> 0
+%     end.
+
+
+abs_float(X) when X < 0 ->
+    -X;
+abs_float(X) ->
+    X.
+
+
+bool_to_int(true) ->
+    1;
+bool_to_int(false) ->
+    0.
+
+filter_dt(undefined, _NowMs) ->
+    0.01;
+filter_dt(LastMs, NowMs) ->
+    Dt = (NowMs - LastMs) / 1000.0,
+    clamp_dt(Dt).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Helpers nav
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+read_nav(C) ->
+    [Ax,Ay,Az, Gx,Gy,Gz] = pmod_nav:read(acc, [
+        out_x_xl,out_y_xl,out_z_xl,
+        out_x_g,out_y_g,out_z_g]),
+    Acc = subtract([Ax, Ay, Az], C#cal.acc),
+    Gyro = subtract([Gx, Gy, Gz], C#cal.gyro),
+    %% acc #{xl_unit => g} => m/s^2
+    [Axx, Ayy, Azz] = scale(Acc, 9.81),
+    %% gyro #{g_unit => dps} => dps
+    [Gxx, Gyy, Gzz] = Gyro,
+    [Axx, Ayy, Azz, Gxx, Gyy, Gzz].
+
+read_nav2(C) ->
+    [Ax,Ay, Gx,Gy] = pmod_nav:read(acc, [
+        out_x_xl,out_y_xl,
+        out_x_g,out_y_g]),
+    Az = 0,
+    Gz = 0,
+    Acc = subtract([Ax, Ay, Az], C#cal.acc),
+    Gyro = subtract([Gx, Gy, Gz], C#cal.gyro),
+    %% acc #{xl_unit => g} => m/s^2
+    [Axx, Ayy, _] = scale(Acc, 9.81),
+    %% gyro #{g_unit => dps} => dps
+    [Gxx, Gyy, _] = Gyro,
+    [Axx, Ayy, 0, Gxx, Gyy, 0].
+
+scale(List, Factor) ->
+    [X*Factor || X <- List].
+
+calibrate(Comp, Registers, N) ->
+    Data = [list_to_tuple(pmod_nav:read(Comp, Registers))
+        || _ <- lists:seq(1,N)],
+    {X, Y, Z} = lists:unzip3(Data),
+    [lists:sum(X)/N, lists:sum(Y)/N, lists:sum(Z)/N].
+
+subtract([X,Y,Z], [X0,Y0,Z0]) ->
+    [X-X0, Y-Y0, Z-Z0].
