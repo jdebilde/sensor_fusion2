@@ -14,20 +14,20 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% DEBUG
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
--define(DEBUG, false).
--define(DEBUG_FILE, "uwb_nav_ekf_debug.log").
+% -define(DEBUG, false).
+% -define(DEBUG_FILE, "uwb_nav_ekf_debug.log").
 
-debug(Fmt, Args) ->
-    case ?DEBUG of
-        true ->
-            Line = io_lib:format(
-                "[nav2] [~p] " ++ Fmt ++ "~n",
-                [erlang:monotonic_time(millisecond) | Args]
-            ),
-            file:write_file(?DEBUG_FILE, Line, [append]);
-        false ->
-            ok
-    end.
+% debug(Fmt, Args) ->
+%     case ?DEBUG of
+%         true ->
+%             Line = io_lib:format(
+%                 "[nav2] [~p] " ++ Fmt ++ "~n",
+%                 [erlang:monotonic_time(millisecond) | Args]
+%             ),
+%             file:write_file(?DEBUG_FILE, Line, [append]);
+%         false ->
+%             ok
+%     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% API
@@ -50,23 +50,24 @@ init(C) ->
     Spec = #{
         name => ?MODULE,
         iter => infinity,
-        timeout => 10
+        % iter => 100,
+        timeout => 0
     },
     T0 = erlang:monotonic_time(microsecond),
     C1 = C#cal{t0 = T0},
-    debug("Init", []),
+    % debug("Init", []),
     {ok, C1, Spec}.
 
 
 measure(C = #cal{t0 = T0}) ->
-    debug("T1", []),
+    % debug("T1", []),
     T1 = erlang:monotonic_time(microsecond),
 
-    debug("Dt", []),
+    % debug("Dt", []),
     Dt =
         case T0 of
             undefined ->
-                0.014;
+                0.005;
             _ ->
                 (T1 - T0) / 1000000.0
         end,

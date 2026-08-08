@@ -59,7 +59,7 @@ init(C) ->
     Spec = #{
         name => ?MODULE,
         iter => infinity,
-        timeout => 10
+        timeout => 0
     },
     T0 = erlang:monotonic_time(microsecond),
     C1 = C#cal{t0 = T0},

@@ -22,22 +22,22 @@
     p,
     %% For the zupt
     stopped_count = 0,
-    %% Temps de la dernière itération du filtre
+    %% Time of the filter's last iteration
     last_filter_time_ms = undefined,
     %% Prevent reusing same UWB measurement
     last_uwb_seq = undefined
 }).
 
 
-%% Bruit d'accélération utilisée comme entrée du modèle.
-%% sigma pour la matrice Q
+%% Acceleration noise used as model input.
+%% Sigma for the Q matrix
 -define(SIGMA_ACCEL_INPUT, 0.50).
 
-%% Bruit UWB en mètres.
-%% sigma pour la matrice R
+%% UWB noise in meters.
+%% Sigma for the R matrix
 -define(SIGMA_UWB, 0.15).
 
-%% UWB hardcodé pour le moment.
+%% For the UWB
 -define(UWB_NAME, uwb_measure).
 -define(UWB_NODE, 'sensor_fusion@uwb_3').
 
@@ -122,26 +122,26 @@ measure(State0 = #state{
     last_filter_time_ms = LastFilterTimeMs
 }) ->
     NowMs = erlang:monotonic_time(millisecond),
-    Dt = filter_dt(LastFilterTimeMs, NowMs),
+    Dt = compute_dt_sec(LastFilterTimeMs, NowMs),
 
     [Ax, Ay, Az, Gx, Gy, Gz] = read_nav2(Cal),
 
-    %% Si le Pmod NAV est vertical :
-    %% Ay et Az sont les accélérations horizontales.
+    %% If the NAV Pmod is vertical:
+    %% Ay and Az are the horizontal accelerations.
     %% AccX = -Ay,
     %% AccY = Az,
 
-    %% Si le Pmod NAV est horizontal :
-    %% Ax et Ay sont les accélérations horizontales.
+    %% If the NAV Pmod is horizontal:
+    %% Ax and Ay are the horizontal accelerations.
     AccX = Ay,
     AccY = Ax,
+
+    {XPred, PPred} = predict_4state(X0, P0, Dt, AccX, AccY),
 
     StoppedRaw = is_stopped(Ax, Ay, Az, Gx, Gy, Gz),
 
     {StateAfterStopCount, Stopped} =
         update_stopped_count(State0, StoppedRaw),
-
-    {XPred, PPred} = predict_4state(X0, P0, Dt, AccX, AccY),
 
     {X1, P1} =
         case Stopped of
@@ -159,10 +159,8 @@ measure(State0 = #state{
         last_filter_time_ms = NowMs
     },
 
-    %% Correction UWB si une nouvelle mesure est disponible.
     {State2, UwbUpdated, UwbSeq, AnchorId} = try_update_with_uwb(State1),
 
-    StoppedInt = bool_to_int(Stopped),
     UwbUpdatedInt = bool_to_int(UwbUpdated),
 
     [Spx, Spy, Svx, Svy] = state_to_list(State2#state.x),
@@ -170,14 +168,14 @@ measure(State0 = #state{
     {ok, [Spx, Spy, Svx, Svy, StoppedInt, NowMs, Dt, Ax, Ay, Az, Gx, Gy, Gz, UwbUpdatedInt, UwbSeq, AnchorId], State2}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% EKF 4 états
+%% EKF 4 states
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 predict_4state(X0, P0, Dt, AccX, AccY) ->
     Sigma2 = ?SIGMA_ACCEL_INPUT * ?SIGMA_ACCEL_INPUT,
     Dt2 = Dt * Dt,
 
-    %% Bruit de processus causé par l'incertitude sur l'accélération.
+    %% Process noise caused by uncertainty in acceleration.
     Q = mat:matrix([
         [0.25 * Dt2 * Dt2 * Sigma2, 0.0, 0.5 * Dt * Dt2 * Sigma2, 0.0],
         [0.0, 0.25 * Dt2 * Dt2 * Sigma2, 0.0, 0.5 * Dt * Dt2 * Sigma2],
@@ -185,6 +183,9 @@ predict_4state(X0, P0, Dt, AccX, AccY) ->
         [0.0, 0.5 * Dt * Dt2 * Sigma2, 0.0, Dt2 * Sigma2]
     ]),
 
+    %% Nonlinear/affine prediction function:
+    %% x' = f(x, u)
+    %% Here, u = [AccX, AccY]
     FFun =
         fun(X) ->
             Px0 = mat:get(1, 1, X),
@@ -205,6 +206,9 @@ predict_4state(X0, P0, Dt, AccX, AccY) ->
             ])
         end,
 
+    %% Jacobian of f with respect to the state x.
+    %% Acceleration is an external input, so it does not appear
+    %% in the Jacobian with respect to x.
     JFFun =
         fun(_X) ->
             mat:matrix([
@@ -218,7 +222,7 @@ predict_4state(X0, P0, Dt, AccX, AccY) ->
     hera2:ekf_predict({X0, P0}, FFun, JFFun, Q).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% ZUPT 4 états
+%% ZUPT 4 states
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 apply_zupt_4state(X, P) ->
@@ -231,9 +235,9 @@ apply_zupt_4state(X, P) ->
         [0.0]
     ]),
 
-    %% On garde l'incertitude de position.
-    %% On réduit l'incertitude sur vx/vy.
-    %% On coupe les corrélations position-vitesse pour éviter un saut de position.
+    %% We retain the position uncertainty.
+    %% We reduce the uncertainty in vx/vy.
+    %% We remove the position-velocity correlations to prevent a position jump.
     P1 = mat:matrix([
         [mat:get(1, 1, P), 0.0, 0.0, 0.0],
         [0.0, mat:get(2, 2, P), 0.0, 0.0],
@@ -321,12 +325,10 @@ state_to_list(X) ->
         mat:get(4, 1, X)
     ].
 
-
 is_new_seq(_Seq, undefined) ->
     true;
 is_new_seq(Seq, LastSeq) ->
     Seq =/= LastSeq.
-
 
 clamp_dt(Dt) when Dt =< 0.0 ->
     0.004;
@@ -335,7 +337,6 @@ clamp_dt(Dt) when Dt > 0.1 ->
 clamp_dt(Dt) ->
     Dt.
 
-
 is_stopped(Ax, Ay, Az, Gx, Gy, Gz) ->
     abs_float(Ax) =< ?ACC_STOP_THRESHOLD andalso
     abs_float(Ay) =< ?ACC_STOP_THRESHOLD andalso
@@ -343,7 +344,6 @@ is_stopped(Ax, Ay, Az, Gx, Gy, Gz) ->
     abs_float(Gx) =< ?GYRO_STOP_THRESHOLD andalso
     abs_float(Gy) =< ?GYRO_STOP_THRESHOLD andalso
     abs_float(Gz) =< ?GYRO_STOP_THRESHOLD.
-
 
 update_stopped_count(State = #state{stopped_count = Count}, StoppedRaw) ->
     Count1 =
@@ -358,28 +358,25 @@ update_stopped_count(State = #state{stopped_count = Count}, StoppedRaw) ->
 
     {State#state{stopped_count = Count1}, Stopped}.
 
-
 % stopped_int(#state{stopped_count = Count}) ->
 %     case Count >= ?STOPPED_MIN_COUNT of
 %         true -> 1;
 %         false -> 0
 %     end.
 
-
 abs_float(X) when X < 0 ->
     -X;
 abs_float(X) ->
     X.
-
 
 bool_to_int(true) ->
     1;
 bool_to_int(false) ->
     0.
 
-filter_dt(undefined, _NowMs) ->
+compute_dt_sec(undefined, _NowMs) ->
     0.01;
-filter_dt(LastMs, NowMs) ->
+compute_dt_sec(LastMs, NowMs) ->
     Dt = (NowMs - LastMs) / 1000.0,
     clamp_dt(Dt).
 
@@ -387,17 +384,17 @@ filter_dt(LastMs, NowMs) ->
 %% Helpers nav
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-read_nav(C) ->
-    [Ax,Ay,Az, Gx,Gy,Gz] = pmod_nav:read(acc, [
-        out_x_xl,out_y_xl,out_z_xl,
-        out_x_g,out_y_g,out_z_g]),
-    Acc = subtract([Ax, Ay, Az], C#cal.acc),
-    Gyro = subtract([Gx, Gy, Gz], C#cal.gyro),
-    %% acc #{xl_unit => g} => m/s^2
-    [Axx, Ayy, Azz] = scale(Acc, 9.81),
-    %% gyro #{g_unit => dps} => dps
-    [Gxx, Gyy, Gzz] = Gyro,
-    [Axx, Ayy, Azz, Gxx, Gyy, Gzz].
+% read_nav(C) ->
+%     [Ax,Ay,Az, Gx,Gy,Gz] = pmod_nav:read(acc, [
+%         out_x_xl,out_y_xl,out_z_xl,
+%         out_x_g,out_y_g,out_z_g]),
+%     Acc = subtract([Ax, Ay, Az], C#cal.acc),
+%     Gyro = subtract([Gx, Gy, Gz], C#cal.gyro),
+%     %% acc #{xl_unit => g} => m/s^2
+%     [Axx, Ayy, Azz] = scale(Acc, 9.81),
+%     %% gyro #{g_unit => dps} => dps
+%     [Gxx, Gyy, Gzz] = Gyro,
+%     [Axx, Ayy, Azz, Gxx, Gyy, Gzz].
 
 read_nav2(C) ->
     [Ax,Ay, Gx,Gy] = pmod_nav:read(acc, [

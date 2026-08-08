@@ -27,6 +27,8 @@ set_args(uwb) ->
     Anchor1 = {1, 2.30, 0.05},
     Anchor2 = {2, 0.10, 0.05},
     Anchors = [Anchor1, Anchor2],
+    % Anchor1 = {1, 0, 0},
+    % Anchors = [Anchor1],
     Current = 0,
     update_table({{uwb, node()}, { Anchors, Current} }).
 
@@ -77,6 +79,7 @@ stop_all() ->
 target_nodes() ->
     % Hosts = ["nav_1", "nav_2", "nav_3", "uwb_1", "uwb_2", "uwb_3"],
     Hosts = ["nav_3", "uwb_1", "uwb_2", "uwb_3"],
+    % Hosts = ["uwb_1", "uwb_3"],
     % Hosts = ["nav_3"],
     [list_to_atom("sensor_fusion@" ++ Host) || Host <- Hosts].
 
@@ -159,7 +162,13 @@ start(_Type, _Args) ->
     case node_type() of
         nav ->
             [grisp_led:flash(L, red, 500) || L <- [1, 2]],
-            _ = grisp:add_device(spi2, pmod_nav);
+            _ = grisp:add_device(spi2, pmod_nav),
+            % pmod_nav:config(acc, #{odr_g => {hz,14.9}});
+            % pmod_nav:config(acc, #{odr_g => {hz,59.5}});
+            % pmod_nav:config(acc, #{odr_g => {hz,119}});
+            pmod_nav:config(acc, #{odr_g => {hz,238}});
+            % pmod_nav:config(acc, #{odr_g => {hz,476}});
+            % pmod_nav:config(acc, #{odr_g => {hz,952}});
         uwb ->
             [grisp_led:flash(L, red, 500) || L <- [1, 2]],
             ok;
@@ -189,52 +198,15 @@ node_type() ->
         true -> undefined
     end.
 
-
-% launch(nav) ->
-%     io:format("launch(nav)~n"),
-%     io:format("Cn~n"),
-%     Cn = ets:lookup_element(args, {nav3, node()}, 2),
-%     io:format("hera:start_measure(nav3)~n"),
-%     {ok,_} = hera:start_measure(nav3, Cn),
-%     % launch(uwb_nav_ekf),
-%     ok;
-
-
 launch(nav) ->
     io:format("launch(nav)~n"),
     io:format("C~n"),
     C = ets:lookup_element(args, {nav2, node()}, 2),
-    io:format("hera:start_measure(nav2)~n"),
-    {ok,_} = hera:start_measure(nav2, C),
+    % io:format("hera:start_measure(nav2)~n"),
+    % {ok,_} = hera:start_measure(nav2, C),
 
-    io:format("hera:start_measure(ekf4_nav2_uwb)~n"),
-    {ok,_} = hera:start_measure(ekf4_nav2_uwb, C),
-
-    % io:format("heading_gyro:calibrate()~n"),
-    % C0 = heading_gyro:calibrate(),
-    % update_table({{heading_gyro, node()}, C0}),
-    % io:format("C~n"),
-    % C = ets:lookup_element(args, {heading_gyro, node()}, 2),
-    % io:format("hera:start_measure(heading_gyro)~n"),
-    % {ok,_} = hera:start_measure(heading_gyro, C),
-
-    % io:format("ekf_v2:calibrate()~n"),
-    % C0 = ekf_v2:calibrate(),
-    % update_table({{ekf_v2, node()}, C0}),
-    % io:format("C~n"),
-    % C = ets:lookup_element(args, {ekf_v2, node()}, 2),
-    % io:format("hera:start_measure(ekf_v2)~n"),
-    % {ok,_} = hera:start_measure(ekf_v2, C),
-
-
-    % io:format("heading_mag:calibrate()~n"),
-    % C0 = heading_mag:calibrate(),
-    % update_table({{heading_mag, node()}, C0}),
-    % io:format("C~n"),
-    % C = ets:lookup_element(args, {heading_mag, node()}, 2),
-    % io:format("hera:start_measure(heading_mag)~n"),
-    % {ok,_} = hera:start_measure(heading_mag, C),
-
+    io:format("hera:start_measure(ekf6_nav2_uwb)~n"),
+    {ok,_} = hera:start_measure(ekf6_nav2_uwb, C),
     ok;
 
 

@@ -2,25 +2,34 @@
 
 -behaviour(hera_measure).
 
+-export([calibrate/0]).
 -export([
     init/1,
     measure/1
 ]).
 
+-record(cal, {
+    acc,
+    gyro,
+    t0 = undefined
+}).
+
 -record(state, {
-    %% EKF state
+    %% Calibration NAV
+    cal,
+    %% EKF state: [px, py, vx, vy]
     x,
     p,
-    %% Prevent reusing same Hera measurements
-    last_nav_seq = undefined,
     %% For the zupt
     stopped_count = 0,
-    %% Pour prédire à chaque itération du filtre
+    %% Time of the filter's last iteration
     last_filter_time_ms = undefined
 }).
 
--define(SIGMA_ACCEL_MEAS, 0.20).
+%% Sigma for the Q matrix
 -define(SIGMA_ACCEL_STATE, 0.50).
+%% Sigma for the R matrix
+-define(SIGMA_ACCEL_MEAS, 0.20).
 
 %% For the zupt
 -define(ACC_STOP_THRESHOLD, 0.08).
@@ -37,7 +46,7 @@
 %     case ?DEBUG of
 %         true ->
 %             Line = io_lib:format(
-%                 "[nav2_ekf] [~p] " ++ Fmt ++ "~n",
+%                 "[ekf6_nav2] [~p] " ++ Fmt ++ "~n",
 %                 [erlang:monotonic_time(millisecond) | Args]
 %             ),
 %             file:write_file(?DEBUG_FILE, Line, [append]);
@@ -49,7 +58,16 @@
 %% API / Hera callbacks
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-init(_) ->
+calibrate() ->
+    io:format("ekf6_nav2 (acc): Calibrating... Do not move the pmod_nav!!~n"),
+    [Ax,Ay,Az] = calibrate(acc, [out_x_xl, out_y_xl, out_z_xl], 300),
+    io:format("ekf6_nav2 (acc): ~p,~p,~p [g]~n", [Ax,Ay,Az]),
+    io:format("ekf6_nav2 (gyro): Calibrating... Do not move the pmod_nav!!~n"),
+    [Gx,Gy,Gz] = calibrate(acc, [out_x_g,out_y_g,out_z_g], 300),
+    io:format("ekf6_nav2 (gyro): ~p,~p,~p [deg/s]~n", [Gx,Gy,Gz]),
+    #cal{acc=[Ax,Ay,Az], gyro=[Gx,Gy,Gz]}.
+
+init(Cal) ->
     Spec = #{
         name => ?MODULE,
         iter => infinity,
@@ -77,28 +95,28 @@ init(_) ->
     NowMs = erlang:monotonic_time(millisecond),
 
     State = #state{
+        cal = Cal,
         x = X0,
         p = P0,
-        last_nav_seq = undefined,
         stopped_count = 0,
         last_filter_time_ms = NowMs
     },
+
     % debug("Init", []),
 
     {ok, State, Spec}.
 
 
 measure(State0 = #state{
+    cal = Cal,
     x = X0,
     p = P0,
-    last_nav_seq = LastSeq,
     last_filter_time_ms = LastFilterTimeMs
 }) ->
-    %% 1. Prédiction à chaque itération du filtre
     NowMs = erlang:monotonic_time(millisecond),
-    DtPred = filter_dt(LastFilterTimeMs, NowMs),
+    Dt = compute_dt_sec(LastFilterTimeMs, NowMs),
 
-    {XPred, PPred} = predict_6state(X0, P0, DtPred),
+    {XPred, PPred} = predict_6state(X0, P0, Dt),
 
     StatePred = State0#state{
         x = XPred,
@@ -106,37 +124,16 @@ measure(State0 = #state{
         last_filter_time_ms = NowMs
     },
 
-    %% 2. Si une nouvelle mesure NAV existe, update.
-    %%    Sinon, on retourne seulement la prédiction.
-    case hera_data:get(nav2, node()) of
-        [{_Node, Seq, _Heratimestamp, NavData}] ->
-            case is_new_seq(Seq, LastSeq) of
-                true ->
-                    {State1, StoppedInt} = update_with_nav(Seq, NavData, StatePred),
-                    [Spx, Spy, Svx, Svy, Sax, Say] = state_to_list(State1#state.x),
+    [Ax, Ay, Az, Gx, Gy, Gz] = read_nav2(Cal),
 
-                    {ok, [Spx, Spy, Svx, Svy, Sax, Say, StoppedInt, Seq], State1};
+    {State1, StoppedInt} = update_with_nav([Ax, Ay, Az, Gx, Gy, Gz], StatePred),
 
-                false ->
-                    %% Pas de nouvelle mesure NAV.
-                    %% On garde quand même la prédiction.
-                    [Spx, Spy, Svx, Svy, Sax, Say] = state_to_list(XPred),
-                    StoppedInt = stopped_int(StatePred),
+    [Spx, Spy, Svx, Svy, Sax, Say] = state_to_list(State1#state.x),
 
-                    {ok, [Spx, Spy, Svx, Svy, Sax, Say, StoppedInt, LastSeq], StatePred}
-            end;
-
-        _ ->
-            %% Aucune mesure NAV disponible.
-            %% On retourne aussi la prédiction.
-            [Spx, Spy, Svx, Svy, Sax, Say] = state_to_list(XPred),
-            StoppedInt = stopped_int(StatePred),
-
-            {ok, [Spx, Spy, Svx, Svy, Sax, Say, StoppedInt, -1], StatePred}
-    end.
+    {ok, [Spx, Spy, Svx, Svy, Sax, Say, StoppedInt, NowMs, Dt, Ax, Ay, Az, Gx, Gy, Gz], State1}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Helpers
+%% EKF 6 states
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 predict_6state(X0, P0, Dt) ->
@@ -192,16 +189,15 @@ predict_6state(X0, P0, Dt) ->
 
     hera2:ekf_predict({X0, P0}, FFun, JFFun, Q).
 
-update_with_nav(Seq, [Navtimestamp, _DtNav, Ax, Ay, Az, Gx, Gy, Gz],
-                State0 = #state{x = XPred, p = PPred}) ->
-    _ = Navtimestamp,
+update_with_nav([Ax, Ay, Az, Gx, Gy, Gz], State0 = #state{x = XPred, p = PPred}) ->
 
     R = mat:diag([
         ?SIGMA_ACCEL_MEAS * ?SIGMA_ACCEL_MEAS,
         ?SIGMA_ACCEL_MEAS * ?SIGMA_ACCEL_MEAS
     ]),
 
-    %% Si le pmodNav est vertical
+    %% If the NAV Pmod is vertical:
+    %% Ay and Az are the horizontal accelerations.
     %% AccX = -Ay,
     %% AccY = Az,
     % Z = mat:matrix([
@@ -209,9 +205,10 @@ update_with_nav(Seq, [Navtimestamp, _DtNav, Ax, Ay, Az, Gx, Gy, Gz],
     %     [Az]
     % ]),
 
-    %% Si le pmodNAV est horizontal :
-    %% AccX = Ay
-    %% AccY = Ax
+    %% If the NAV Pmod is horizontal:
+    %% Ax and Ay are the horizontal accelerations.
+    %% AccX = Ay,
+    %% AccY = Ax,
     Z = mat:matrix([
         [Ay],
         [Ax]
@@ -237,31 +234,52 @@ update_with_nav(Seq, [Navtimestamp, _DtNav, Ax, Ay, Az, Gx, Gy, Gz],
 
     {XUpdate, PUpdate} = hera2:ekf_update({XPred, PPred}, HFun, JHFun, R, Z),
 
-    %% Avec détection arrêt brut.
+    %% With abrupt stop detection.
     StoppedRaw = is_stopped(Ax, Ay, Az, Gx, Gy, Gz),
-    %% Sans détection arrêt brut.
+    %% Without abrupt stop detection.
     % StoppedRaw = false,
 
     {StateAfterStopCount, Stopped} =
         update_stopped_count(State0, StoppedRaw),
 
-    X1 =
+    {X1, P1} =
         case Stopped of
             true ->
-                apply_zupt_6state(XUpdate);
+                apply_zupt_6state(XUpdate, PUpdate);
             false ->
-                XUpdate
+                {XUpdate, PUpdate}
         end,
 
     StoppedInt = bool_to_int(Stopped),
 
     State1 = StateAfterStopCount#state{
         x = X1,
-        p = PUpdate,
-        last_nav_seq = Seq
+        p = P1
     },
 
     {State1, StoppedInt}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% ZUPT 6 states
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+apply_zupt_6state(X, P) ->
+    [Px, Py, _Vx, _Vy, _Ax, _Ay] = state_to_list(X),
+
+    X1 = mat:matrix([
+        [Px],
+        [Py],
+        [0.0],
+        [0.0],
+        [0.0],
+        [0.0]
+    ]),
+
+    {X1, P}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Helpers
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 state_to_list(X) ->
     [
@@ -273,17 +291,14 @@ state_to_list(X) ->
         mat:get(6, 1, X)
     ].
 
-
-is_new_seq(_Seq, undefined) ->
-    true;
-is_new_seq(Seq, LastSeq) ->
-    Seq =/= LastSeq.
-
+% is_new_seq(_Seq, undefined) ->
+%     true;
+% is_new_seq(Seq, LastSeq) ->
+%     Seq =/= LastSeq.
 
 clamp_dt(Dt) when Dt =< 0.0 ->
     0.004;
 clamp_dt(Dt) when Dt > 0.1 ->
-    %% Avoid huge jumps after pauses/debugging.
     0.1;
 clamp_dt(Dt) ->
     Dt.
@@ -309,23 +324,11 @@ update_stopped_count(State = #state{stopped_count = Count}, StoppedRaw) ->
 
     {State#state{stopped_count = Count1}, Stopped}.
 
-apply_zupt_6state(X) ->
-    [Px, Py, _Vx, _Vy, _Ax, _Ay] = state_to_list(X),
-
-    mat:matrix([
-        [Px],
-        [Py],
-        [0.0],
-        [0.0],
-        [0.0],
-        [0.0]
-    ]).
-
-stopped_int(#state{stopped_count = Count}) ->
-    case Count >= ?STOPPED_MIN_COUNT of
-        true -> 1;
-        false -> 0
-    end.
+% stopped_int(#state{stopped_count = Count}) ->
+%     case Count >= ?STOPPED_MIN_COUNT of
+%         true -> 1;
+%         false -> 0
+%     end.
 
 abs_float(X) when X < 0 ->
     -X;
@@ -337,8 +340,50 @@ bool_to_int(true) ->
 bool_to_int(false) ->
     0.
 
-filter_dt(undefined, _NowMs) ->
+compute_dt_sec(undefined, _NowMs) ->
     0.01;
-filter_dt(LastMs, NowMs) ->
+compute_dt_sec(LastMs, NowMs) ->
     Dt = (NowMs - LastMs) / 1000.0,
     clamp_dt(Dt).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Helpers nav
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% read_nav(C) ->
+%     [Ax,Ay,Az, Gx,Gy,Gz] = pmod_nav:read(acc, [
+%         out_x_xl,out_y_xl,out_z_xl,
+%         out_x_g,out_y_g,out_z_g]),
+%     Acc = subtract([Ax, Ay, Az], C#cal.acc),
+%     Gyro = subtract([Gx, Gy, Gz], C#cal.gyro),
+%     %% acc #{xl_unit => g} => m/s^2
+%     [Axx, Ayy, Azz] = scale(Acc, 9.81),
+%     %% gyro #{g_unit => dps} => dps
+%     [Gxx, Gyy, Gzz] = Gyro,
+%     [Axx, Ayy, Azz, Gxx, Gyy, Gzz].
+
+read_nav2(C) ->
+    [Ax,Ay, Gx,Gy] = pmod_nav:read(acc, [
+        out_x_xl,out_y_xl,
+        out_x_g,out_y_g]),
+    Az = 0,
+    Gz = 0,
+    Acc = subtract([Ax, Ay, Az], C#cal.acc),
+    Gyro = subtract([Gx, Gy, Gz], C#cal.gyro),
+    %% acc #{xl_unit => g} => m/s^2
+    [Axx, Ayy, _] = scale(Acc, 9.81),
+    %% gyro #{g_unit => dps} => dps
+    [Gxx, Gyy, _] = Gyro,
+    [Axx, Ayy, 0, Gxx, Gyy, 0].
+
+scale(List, Factor) ->
+    [X*Factor || X <- List].
+
+calibrate(Comp, Registers, N) ->
+    Data = [list_to_tuple(pmod_nav:read(Comp, Registers))
+        || _ <- lists:seq(1,N)],
+    {X, Y, Z} = lists:unzip3(Data),
+    [lists:sum(X)/N, lists:sum(Y)/N, lists:sum(Z)/N].
+
+subtract([X,Y,Z], [X0,Y0,Z0]) ->
+    [X-X0, Y-Y0, Z-Z0].
