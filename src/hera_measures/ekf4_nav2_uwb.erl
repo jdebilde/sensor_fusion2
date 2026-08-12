@@ -82,7 +82,7 @@ init(Cal) ->
     Spec = #{
         name => ?MODULE,
         iter => infinity,
-        timeout => 0
+        timeout => 5
     },
 
     X0 = mat:matrix([
@@ -91,6 +91,13 @@ init(Cal) ->
         [0.0], %% vx
         [0.0]  %% vy
     ]),
+
+    % X0 = mat:matrix([
+    %     [1.7], %% px
+    %     [3.15], %% py
+    %     [0.0], %% vx
+    %     [0.0]  %% vy
+    % ]),
 
     P0 = mat:diag([
         1.0e-6, %% px

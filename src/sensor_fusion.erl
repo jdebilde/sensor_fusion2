@@ -25,6 +25,7 @@ set_args(nav3) ->
 
 set_args(uwb) ->
     Anchor1 = {1, 2.30, 0.05},
+    % Anchor1 = {1, 4.70, 0.05},
     Anchor2 = {2, 0.10, 0.05},
     Anchors = [Anchor1, Anchor2],
     % Anchor1 = {1, 0, 0},
@@ -205,8 +206,8 @@ launch(nav) ->
     % io:format("hera:start_measure(nav2)~n"),
     % {ok,_} = hera:start_measure(nav2, C),
 
-    io:format("hera:start_measure(ekf6_nav2_uwb)~n"),
-    {ok,_} = hera:start_measure(ekf6_nav2_uwb, C),
+    io:format("hera:start_measure(ekf4_nav2_uwb)~n"),
+    {ok,_} = hera:start_measure(ekf4_nav2_uwb, C),
     ok;
 
 
@@ -214,11 +215,20 @@ launch(uwb) ->
     io:format("launch(uwb)~n"),
     io:format("uwb_tag:ensure_started()~n"),
     uwb_tag:ensure_started(),
+
     io:format("Anchors_and_current~n"),
     Anchors_and_current = ets:lookup_element(args, {uwb, node()}, 2),
     io:format("> ~p ~n", [Anchors_and_current]),
+
     io:format("hera:start_measure(uwb_measure)~n"),
     {ok,_} = hera:start_measure(uwb_measure, Anchors_and_current),
+    % {ok,_} = hera:start_measure(uwb_measure, {[{1, 2.30, 0.05}, {2, 0.10, 0.05}], 0}),
+    % {ok,_} = hera:start_measure(uwb_measure, {[{1, 4.70, 0.05}, {2, 0.10, 0.05}], 0}),
+
+    % io:format("hera:start_measure(bilateration)~n"),
+    % {ok,_} = hera:start_measure(bilateration, {{1, 2.30, 0.05}, {2, 0.10, 0.05}, {0.9, 3.15}}),
+    % {ok,_} = hera:start_measure(bilateration, {{1, 4.70, 0.05}, {2, 0.10, 0.05}, {0.9, 3.15}}),
+
     % launch(uwb_nav_ekf),
     ok;
 

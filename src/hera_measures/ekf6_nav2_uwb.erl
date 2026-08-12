@@ -81,7 +81,7 @@ init(Cal) ->
     Spec = #{
         name => ?MODULE,
         iter => infinity,
-        timeout => 0
+        timeout => 5
     },
 
     X0 = mat:matrix([
