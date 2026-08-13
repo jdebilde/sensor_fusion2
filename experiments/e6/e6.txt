@@ -1,0 +1,6 @@
+mesures a 1m et on bouge sur x
+(-2, 1)
+(-1, 1)
+(-0, 1)
+(1, 1)
+(2, 1)
