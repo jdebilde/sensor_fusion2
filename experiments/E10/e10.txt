@@ -1,2 +1,0 @@
-Assign an axis to the range of each sonars (x,y,z).
-Fuse the data with a simple Kalman filter where we assume the position remains constant +- 10 cm.

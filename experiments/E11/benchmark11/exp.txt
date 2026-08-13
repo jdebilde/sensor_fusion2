@@ -1,1 +1,0 @@
-Les 4 dernières colonnes representes les temps en microsecondes de : Calcul total, temps de lectures des donnees (hera get + tri + process(nav), temps de kalman predict, temps de kalman update.
