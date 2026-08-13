@@ -4,7 +4,7 @@ This repository is based on the work of two successive master thesis:
 -  from Julien Bastin and Guillaume Neirinckx : https://github.com/bastinjul/sensor_fusion
 - from Sébastien Kalbusch and Vincent Verpoten : https://github.com/sebkm/sensor_fusion
 
-# User manual
+#aaa User manual
 
 ## Required hardware
 To use our system you need:
