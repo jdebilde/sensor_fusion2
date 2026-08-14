@@ -40,7 +40,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -define(DEBUG, false).
--define(DEBUG_FILE, "uwb_nav_ekf_debug.log").
+-define(DEBUG_FILE, "debug.log").
 
 debug(Fmt, Args) ->
     case ?DEBUG of

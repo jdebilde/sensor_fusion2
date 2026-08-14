@@ -4,7 +4,6 @@
 
 -export([set_args/1]).
 -export([launch/0, launch_all/0, stop_all/0]).
-% -export([update_code/2, update_code/3]).
 -export([target_nodes/0, connect_nodes/0, connected_target_nodes/0]).
 -export([update_code/2, update_code/3]).
 -export([check_remote_module/1, check_remote_module/2]).
@@ -15,23 +14,13 @@
 %% API
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+set_args(ekf) ->
+    Calibration = nav2:calibrate(),
+    update_table({{nav2, node()}, Calibration});
+
 set_args(nav2) ->
-    C = nav2:calibrate(),
-    update_table({{nav2, node()}, C});
-
-set_args(nav3) ->
-    Cn = nav3:calibrate(),
-    update_table({{nav3, node()}, Cn});
-
-set_args(uwb) ->
-    Anchor1 = {1, 2.30, 0.05},
-    % Anchor1 = {1, 4.70, 0.05},
-    Anchor2 = {2, 0.10, 0.05},
-    Anchors = [Anchor1, Anchor2],
-    % Anchor1 = {1, 0, 0},
-    % Anchors = [Anchor1],
-    Current = 0,
-    update_table({{uwb, node()}, { Anchors, Current} }).
+    Calibration = nav2:calibrate(),
+    update_table({{nav2, node()}, Calibration}).
 
 
 launch() ->
@@ -55,26 +44,6 @@ stop_all() ->
     _ = rpc:multicall(application, stop, [hera]),
     _ = rpc:multicall(application, start, [hera]),
     ok.
-
-
-% %% to be called on the source node
-% update_code(Application, Module) ->
-%     {ok,_} = c:c(Module),
-%     {_,Binary,_} = code:get_object_code(Module),
-%     rpc:multicall(nodes(), ?MODULE, update_code,
-%         [Application, Module, Binary]).
-
-
-% %% to be called on the destination node
-% update_code(Application, Module, Binary) ->
-%     AppFile = atom_to_list(Application) ++ ".app",
-%     FullPath = code:where_is_file(AppFile),
-%     PathLen = length(FullPath) - length(AppFile),
-%     {Path,_} = lists:split(PathLen, FullPath),
-%     File = Path ++ atom_to_list(Module) ++ ".beam",
-%     ok = file:write_file(File, Binary),
-%     c:l(Module).
-
 
 %% Nodes you expect in the system
 target_nodes() ->
@@ -164,12 +133,7 @@ start(_Type, _Args) ->
         nav ->
             [grisp_led:flash(L, red, 500) || L <- [1, 2]],
             _ = grisp:add_device(spi2, pmod_nav),
-            % pmod_nav:config(acc, #{odr_g => {hz,14.9}});
-            % pmod_nav:config(acc, #{odr_g => {hz,59.5}});
-            % pmod_nav:config(acc, #{odr_g => {hz,119}});
             pmod_nav:config(acc, #{odr_g => {hz,238}});
-            % pmod_nav:config(acc, #{odr_g => {hz,476}});
-            % pmod_nav:config(acc, #{odr_g => {hz,952}});
         uwb ->
             [grisp_led:flash(L, red, 500) || L <- [1, 2]],
             ok;
@@ -201,54 +165,33 @@ node_type() ->
 
 launch(nav) ->
     io:format("launch(nav)~n"),
-    io:format("C~n"),
-    C = ets:lookup_element(args, {nav2, node()}, 2),
-    % io:format("hera:start_measure(nav2)~n"),
-    % {ok,_} = hera:start_measure(nav2, C),
+    Calibration = ets:lookup_element(args, {nav2, node()}, 2),
+    io:format("Calibration:~n~p~n", [Calibration]),
 
-    io:format("hera:start_measure(ekf4_nav2_uwb)~n"),
-    {ok,_} = hera:start_measure(ekf4_nav2_uwb, C),
+    % io:format("hera:start_measure(nav2, Calibration)~n"),
+    % {ok,_} = hera:start_measure(nav2, Calibration),
+
+    io:format("hera:start_measure(ekf4_nav2_uwb, Calibration)~n"),
+    {ok,_} = hera:start_measure(ekf4_nav2_uwb, Calibration),
     ok;
-
 
 launch(uwb) ->
     io:format("launch(uwb)~n"),
     io:format("uwb_tag:ensure_started()~n"),
     uwb_tag:ensure_started(),
 
-    io:format("Anchors_and_current~n"),
-    Anchors_and_current = ets:lookup_element(args, {uwb, node()}, 2),
-    io:format("> ~p ~n", [Anchors_and_current]),
+    % Config = {[{1, 0.0, 0.0}]},
+    % Config = {[{1, 2.30, 0.05}, {2, 0.10, 0.05}]},
+    Config = {[{1, 4.70, 0.05}, {2, 0.10, 0.05}]},
+    io:format("Config:~n~p~n", [Config]),
+    io:format("hera:start_measure(uwb_measure, Config)~n"),
+    {ok,_} = hera:start_measure(uwb_measure, Config),
 
-    io:format("hera:start_measure(uwb_measure)~n"),
-    {ok,_} = hera:start_measure(uwb_measure, Anchors_and_current),
-    % {ok,_} = hera:start_measure(uwb_measure, {[{1, 2.30, 0.05}, {2, 0.10, 0.05}], 0}),
-    % {ok,_} = hera:start_measure(uwb_measure, {[{1, 4.70, 0.05}, {2, 0.10, 0.05}], 0}),
-
-    % io:format("hera:start_measure(bilateration)~n"),
-    % {ok,_} = hera:start_measure(bilateration, {{1, 2.30, 0.05}, {2, 0.10, 0.05}, {0.9, 3.15}}),
-    % {ok,_} = hera:start_measure(bilateration, {{1, 4.70, 0.05}, {2, 0.10, 0.05}, {0.9, 3.15}}),
-
-    % launch(uwb_nav_ekf),
-    ok;
-
-launch(uwb_nav_ekf) ->
-    NavNode = 'sensor_fusion@nav_3',
-    UwbNode = 'sensor_fusion@uwb_3',
-    % InitialPos = {0.90, 1.65},
-    % InitialPos = {1.50, 1.65},
-    % InitialPos = {1.50, 3.15},
-    InitialPos = {0.90, 3.15},
-    AccBias = {-0.20, 0.46},
-    SigmaAcc = 1,
-    SigmaUwb = 0.2,
-    io:format("uwb_nav_ekf~n"),
-    io:format("InitialPos: (~p)~n", [InitialPos]),
-    io:format("AccBias   : (~p)~n", [AccBias]),
-    io:format("SigmaAcc  : (~p)~n", [SigmaAcc]),
-    io:format("SigmaUwb  : (~p)~n", [SigmaUwb]),
-    {ok,_} = hera:start_measure(uwb_nav_ekf,
-                                {InitialPos, NavNode, UwbNode, AccBias}),
+    % Config = {[{1, 2.30, 0.05}, {2, 0.10, 0.05}], {0.9, 3.15}},
+    % Config = {[{1, 4.70, 0.05}, {2, 0.10, 0.05}], {0.9, 3.15}},
+    % io:format("Config:~n~p~n", [Config]),
+    % io:format("hera:start_measure(bilateration, Config)~n"),
+    % {ok,_} = hera:start_measure(bilateration, Config),
     ok;
 
 launch(_) ->
@@ -272,5 +215,5 @@ update_table(Object) ->
 
 
 print_debug() ->
-    {ok, Bin} = file:read_file("uwb_nav_ekf_debug.log"),
+    {ok, Bin} = file:read_file("debug.log"),
     io:format("~s", [Bin]).

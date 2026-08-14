@@ -26,24 +26,9 @@
 
 -include_lib("grisp/include/pmod_uwb.hrl").
 
-%%% =========================
-%%% TIMESTAMP HELPERS
-%%% =========================
-
-ts_norm(T) ->
-    T band ?TS_MASK.
-
-ts_sub(Newer, Older) when Newer >= Older ->
-    Newer - Older;
-ts_sub(Newer, Older) ->
-    (Newer + ?TS_WRAP) - Older.
-
-align_delayed_tx_time(T) ->
-    ts_norm(T band ?DX_TIME_MASK).
-
-%%% =========================
-%%% INIT / CONFIG
-%%% =========================
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% INIT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 configure_uwb() ->
     pmod_uwb:write(tx_antd, #{tx_antd => ?TX_ANTD}),
@@ -80,9 +65,9 @@ ensure_started() ->
             ok
     end.
 
-%%% =========================
-%%% PUBLIC API
-%%% =========================
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% PUBLIC API
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 measure_distance(AnchorId) ->
     measure_distance(AnchorId, 0).
@@ -98,19 +83,6 @@ measure_distance(AnchorId, Seq)
         %     [AnchorId, Seq, End - Start]
         % ),
         Res.
-    % case ensure_started() of
-    %     ok ->
-    %         Start = erlang:monotonic_time(microsecond),
-    %         Res = do_ranging(AnchorId, Seq),
-    %         End = erlang:monotonic_time(microsecond),
-    %         io:format(
-    %             "{ anchor : ~p, seq : ~p, dt : ~p}~n",
-    %             [AnchorId, Seq, End - Start]
-    %         ),
-    %         Res;
-    %     Error ->
-    %         {error, {start_failed, Error}, Seq}
-    % end.
 
 measure_distances(AnchorIds) when is_list(AnchorIds) ->
     measure_distances(AnchorIds, 0).
@@ -186,9 +158,13 @@ measure_all_same_seq([AnchorId | Rest], Seq, Acc) ->
         {error, Reason, _} ->
             {error, {anchor_failed, AnchorId, Reason}}
     end.
-%%% =========================
-%%% INTERNAL DS-TWR + REPORT
-%%% =========================
+
+print_delay() ->
+    io:format("TX_ANTD=~p RX_ANTD=~p ~n", [?TX_ANTD, ?RX_ANTD]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% INTERNAL DS-TWR + REPORT
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 do_ranging(AnchorId, Seq) ->
     %% ---- T1: POLL ----
@@ -241,12 +217,9 @@ do_ranging(AnchorId, Seq) ->
             % ),
 
             %% ---- WAIT REPORT ----
-            %% IMPORTANT:
-            %% wait4resp a déjà activé RX après le FINAL,
-            %% donc il faut utiliser reception(true).
             case pmod_uwb:reception(true) of
-                {_, <<"REPORT:", Seq:8, AnchorId:8, DistanceCentiCm:32/signed>>} ->
-                    DistanceCm = DistanceCentiCm / 100.0,
+                {_, <<"REPORT:", Seq:8, AnchorId:8, DistanceCmInt:32/signed>>} ->
+                    DistanceCm = DistanceCmInt / 100.0,
                     {ok, DistanceCm, (Seq + 1) band 16#FF};
 
                 {_, <<"REPORT:", Seq:8, OtherAnchorId:8, _/binary>>} ->
@@ -269,5 +242,17 @@ do_ranging(AnchorId, Seq) ->
             {error, resp_timeout_or_unexpected, Seq}
     end.
 
-print_delay() ->
-    io:format("TX_ANTD=~p RX_ANTD=~p ~n", [?TX_ANTD, ?RX_ANTD]).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% HELPERS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ts_norm(T) ->
+    T band ?TS_MASK.
+
+ts_sub(Newer, Older) when Newer >= Older ->
+    Newer - Older;
+ts_sub(Newer, Older) ->
+    (Newer + ?TS_WRAP) - Older.
+
+align_delayed_tx_time(T) ->
+    ts_norm(T band ?DX_TIME_MASK).
