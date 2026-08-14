@@ -34,3 +34,5 @@ liveView/octave-workspace
 prompt.txt
 OURexperiments
 src/ignore
+viewer/__pycache__
+viewer/views/__pycache__
