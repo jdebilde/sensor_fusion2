@@ -49,7 +49,7 @@ local_release:
 
 # start the visualization tool
 liveView:
-	@cd liveView/ && octave liveView.m
+	@cd viewer/ && python3 main.py
 
 # run the unit tests
 test:
