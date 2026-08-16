@@ -160,10 +160,10 @@ handle_poll(AnchorId, Seq) ->
                     DistanceCm = DistanceM * 100.0,
 
                     %% ---- REPORT ----
-                    %% On encode la distance en entier centi-cm pour éviter les flottants binaires.
+                    %% We encode the distance as an integer to avoid floating-point numbers.
                     %% Ex: 93.41 cm -> 9341
-                    DistanceCentiCm = round(DistanceCm * 100.0),
-                    Report = <<"REPORT:", Seq:8, AnchorId:8, DistanceCentiCm:32/signed>>,
+                    DistanceCmInt = round(DistanceCm * 100.0),
+                    Report = <<"REPORT:", Seq:8, AnchorId:8, DistanceCmInt:32/signed>>,
 
                     pmod_uwb:transmit(Report),
 

@@ -20,7 +20,18 @@ set_args(ekf) ->
 
 set_args(nav2) ->
     Calibration = nav2:calibrate(),
-    update_table({{nav2, node()}, Calibration}).
+    update_table({{nav2, node()}, Calibration});
+
+set_args(uwb) ->
+    %% uwb_measure
+    % Config = {[{1, 0.0, 0.0}]},
+    Config = {[{1, 2.30, 0.05}, {2, 0.10, 0.05}]},
+    % Config = {[{1, 4.70, 0.05}, {2, 0.10, 0.05}]},
+
+    %% bilateration
+    % Config = {{1, 2.30, 0.05}, {2, 0.10, 0.05}, {0.9, 3.15}},
+    % Config = {{1, 4.70, 0.05}, {2, 0.10, 0.05}, {0.9, 3.15}},
+    update_table({{uwb, node()}, Config}).
 
 
 launch() ->
@@ -171,8 +182,17 @@ launch(nav) ->
     % io:format("hera:start_measure(nav2, Calibration)~n"),
     % {ok,_} = hera:start_measure(nav2, Calibration),
 
-    io:format("hera:start_measure(ekf4_nav2_uwb, Calibration)~n"),
-    {ok,_} = hera:start_measure(ekf4_nav2_uwb, Calibration),
+    % Position = {0.0, 0.0},
+    % Position = {0.9, 3.15}, % rec with [{1, 2.30, 0.05}, {2, 0.10, 0.05}]
+    % Position = {1.7, 3.15}, % rec with [{1, 4.70, 0.05}, {2, 0.10, 0.05}]
+    % Position = {1.7, 4.95}, % rec with [{1, 4.70, 0.05}, {2, 0.10, 0.05}]
+    % Position = {1.2, 2.78}, % circle with [{1, 2.30, 0.05}, {2, 0.10, 0.05}]
+    % Position = {2.0, 2.78}, % circle with [{1, 4.70, 0.05}, {2, 0.10, 0.05}]
+    Position = {1.2, 2.90}, % eight with [{1, 2.30, 0.05}, {2, 0.10, 0.05}]
+    % Position = {2.0, 2.90}, % eight with [{1, 4.70, 0.05}, {2, 0.10, 0.05}]
+    io:format("Position:~n~p~n", [Position]),
+    io:format("hera:start_measure(ekf6_nav2_uwb, {Calibration, Position})~n"),
+    {ok,_} = hera:start_measure(ekf6_nav2_uwb, {Calibration, Position}),
     ok;
 
 launch(uwb) ->
@@ -180,16 +200,12 @@ launch(uwb) ->
     io:format("uwb_tag:ensure_started()~n"),
     uwb_tag:ensure_started(),
 
-    % Config = {[{1, 0.0, 0.0}]},
-    % Config = {[{1, 2.30, 0.05}, {2, 0.10, 0.05}]},
-    Config = {[{1, 4.70, 0.05}, {2, 0.10, 0.05}]},
+    Config = ets:lookup_element(args, {uwb, node()}, 2),
     io:format("Config:~n~p~n", [Config]),
+
     io:format("hera:start_measure(uwb_measure, Config)~n"),
     {ok,_} = hera:start_measure(uwb_measure, Config),
 
-    % Config = {[{1, 2.30, 0.05}, {2, 0.10, 0.05}], {0.9, 3.15}},
-    % Config = {[{1, 4.70, 0.05}, {2, 0.10, 0.05}], {0.9, 3.15}},
-    % io:format("Config:~n~p~n", [Config]),
     % io:format("hera:start_measure(bilateration, Config)~n"),
     % {ok,_} = hera:start_measure(bilateration, Config),
     ok;

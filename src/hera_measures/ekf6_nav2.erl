@@ -67,7 +67,7 @@ calibrate() ->
     io:format("ekf6_nav2 (gyro): ~p,~p,~p [deg/s]~n", [Gx,Gy,Gz]),
     #cal{acc=[Ax,Ay,Az], gyro=[Gx,Gy,Gz]}.
 
-init(Cal) ->
+init({Cal, {Px, Py}}) ->
     Spec = #{
         name => ?MODULE,
         iter => infinity,
@@ -75,8 +75,8 @@ init(Cal) ->
     },
 
     X0 = mat:matrix([
-        [0.0], %% px
-        [0.0], %% py
+        [Px], %% px
+        [Py], %% py
         [0.0], %% vx
         [0.0], %% vy
         [0.0], %% ax
@@ -148,8 +148,8 @@ predict_6state(X0, P0, Dt) ->
         ?SIGMA_ACCEL_STATE * ?SIGMA_ACCEL_STATE
     ]),
 
-    %% Fonction de prédiction :
-    %% état = [px, py, vx, vy, ax, ay]
+    %% Prediction Function :
+    %% state = [px, py, vx, vy, ax, ay]
     FFun =
         fun(X) ->
             Px0 = mat:get(1, 1, X),

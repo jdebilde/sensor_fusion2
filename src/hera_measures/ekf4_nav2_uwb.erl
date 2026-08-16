@@ -35,7 +35,8 @@
 
 %% UWB noise in meters.
 %% Sigma for the R matrix
--define(SIGMA_UWB, 0.15).
+% -define(SIGMA_UWB, 0.15).
+-define(SIGMA_UWB, 0.08).
 
 %% For the UWB
 -define(UWB_NAME, uwb_measure).
@@ -78,7 +79,7 @@ calibrate() ->
     io:format("ekf4_nav2_uwb (gyro): ~p,~p,~p [deg/s]~n", [Gx,Gy,Gz]),
     #cal{acc=[Ax,Ay,Az], gyro=[Gx,Gy,Gz]}.
 
-init(Cal) ->
+init({Cal, {Px, Py}}) ->
     Spec = #{
         name => ?MODULE,
         iter => infinity,
@@ -86,8 +87,8 @@ init(Cal) ->
     },
 
     X0 = mat:matrix([
-        [0.9], %% px
-        [3.15], %% py
+        [Px], %% px
+        [Py], %% py
         [0.0], %% vx
         [0.0]  %% vy
     ]),

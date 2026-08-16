@@ -50,9 +50,13 @@ measure(State = #state{
     case uwb_tag:measure_distance(AnchorId) of
         {ok, DistanceCm, _} ->
             CorrectedDistanceCm = correct_distance(DistanceCm),
-            {ok, [AnchorId, CorrectedDistanceCm, X, Y], NextState};
+            case CorrectedDistanceCm >= 0 andalso CorrectedDistanceCm =< 1100 of
+                true ->
+                    {ok, [AnchorId, CorrectedDistanceCm, X, Y], NextState};
+                false ->
+                    {undefined, NextState}
+            end;
             % {ok, [AnchorId, DistanceCm, X, Y], NextState};
-
             % T1 = erlang:monotonic_time(microsecond),
             % Dt = (T1 - T0) / 1000000.0,
             % {ok, [AnchorId, DistanceCm, X, Y, Dt], NextState};

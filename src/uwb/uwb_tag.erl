@@ -9,7 +9,6 @@
     measure_distances/1,
     measure_distances/2,
     loop_test/2,
-    test_loop/2,
     print_delay/0
 ]).
 
@@ -102,7 +101,7 @@ measure_distances_loop([AnchorId | Rest], Seq0, Acc) ->
             {error, {anchor_failed, AnchorId, Reason}, Seq0}
     end.
 
-loop_test(AnchorId, Seq0) ->
+loop_test(AnchorId, Seq0) when is_integer(AnchorId) ->
     case measure_distance(AnchorId, Seq0) of
         {ok, DistanceCm, NextSeq} ->
             io:format(
@@ -119,9 +118,9 @@ loop_test(AnchorId, Seq0) ->
             ),
             % timer:sleep(?RETRY_DELAY),
             loop_test(AnchorId, SameSeq)
-    end.
+    end;
 
-test_loop(AnchorIds, Seq) when is_list(AnchorIds) ->
+loop_test(AnchorIds, Seq) when is_list(AnchorIds) ->
     case measure_all_same_seq(AnchorIds, Seq) of
         {ok, Results} ->
             lists:foreach(
@@ -134,13 +133,13 @@ test_loop(AnchorIds, Seq) when is_list(AnchorIds) ->
                 Results
             ),
             % timer:sleep(?RETRY_DELAY),
-            test_loop(AnchorIds, (Seq + 1) band 16#FF);
+            loop_test(AnchorIds, (Seq + 1) band 16#FF);
         {error, _} ->
-            test_loop(AnchorIds, Seq)
+            loop_test(AnchorIds, Seq)
         % {error, Reason} ->
         %     io:format("Tag seq=~p error: ~p~n", [Seq, Reason]),
         %     % timer:sleep(?RETRY_DELAY),
-        %     test_loop(AnchorIds, Seq)
+        %     loop_test(AnchorIds, Seq)
     end.
 
 measure_all_same_seq(AnchorIds, Seq) ->
