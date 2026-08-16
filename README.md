@@ -275,14 +275,25 @@ If you wish to stop the measurements on the whole cluster you can use:
 sensor_fusion:stop_all().
 ```
 
+---
+
 ### LiveView
 You can visualize the measurements in soft real time with the LiveView tool.
 To start it just do:
 ```bash
 make liveView
 ```
-?
+For more information, you can check our small manual about the [viewer](/markdown/viewer.md).
 
+---
 
-### Adding a new view in LiveView
-?
+### Experiements
+
+In this [document](experiments/README.md), we describe the commands we used and provide explanations of the experiments we conducted.
+
+---
+
+### Useful commands
+
+In this [document](/markdown/HOW_TO.md), we provide some useful commands that we used during development. This can serve as a quick reference when you forget a command.
+

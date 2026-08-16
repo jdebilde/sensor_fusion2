@@ -1,14 +1,17 @@
 # Experiment 1
 * The tag is facing the anchor (looking south)
 * The anchor is facing the tag (looking north)
+* we measured the distance at 0.5, 1, 2, 3, 4 and 5m.
 
 # Experiment 2
 * The tag is facing the anchor (looking south)
 * The anchor is facing right  (looking east)
+* we measured the distance at 0.5, 1, 2, 3, 4 and 5m.
 
 # Experiment 3
 * The tag is facing the anchor (looking south)
 * The anchor is facing opposite (looking south)
+* we measured the distance at 0.5, 1, 2, 3, 4 and 5m.
 
 ## uwb_3 with uwb_1
 
@@ -94,6 +97,9 @@ uwb_anchor:start(2).
 These files contains results form `uwb_measure` so **distance in cm to anchor i**.
 
 # Experiment 4
+
+We decided to test bilateral movement; to take full advantage of the Stevin's design, we positioned the anchors in {1, 4.70, 0.05}, {2, 0.10, 0.05}. We then measured the position at fixed points, as well as while in motion.
+
 On uwb_1:
 ```
 uwb_anchor:start(1).
@@ -131,6 +137,9 @@ launch(uwb) ->
 ```
 
 # Experiment 5 to 10
+
+We wanted to analyze whether the position along the x-axis during measurements affects the results. We decided to place an anchor at (0,0) and then at y-coordinates of 1, 2, 3, 4, and 5 meters. We moved the x-axis, with the tag remaining at fixed positions, to see if the resulting angle affects the results.
+
 On uwb_1:
 ```
 uwb_anchor:start(1).
@@ -168,6 +177,10 @@ launch(uwb) ->
 ```
 
 # Experiment 12
+we positioned the anchors in {1, 2.30, 0.05}, {2, 0.10, 0.05} and used to the
+extend kalman filter with a state for 4 (px, py, vx, vy) to measure a the
+position.
+
 On uwb_1:
 ```
 uwb_anchor:start(1).
@@ -225,6 +238,10 @@ launch(nav) ->
 ```
 
 # Experiment 13
+we positioned the anchors in {1, 2.30, 0.05}, {2, 0.10, 0.05} and used to the
+extend kalman filter with a state for 6 (px, py, vx, vy, ax, xy) to measure a
+the position.
+
 On uwb_1:
 ```
 uwb_anchor:start(1).
@@ -281,6 +298,10 @@ launch(nav) ->
 ```
 
 # Experiment 14
+we positioned the anchors in {1, 4.70, 0.05}, {2, 0.10, 0.05} and used to the
+extend kalman filter with a state for 4 (px, py, vx, vy) to measure a the
+position.
+
 On uwb_1:
 ```
 uwb_anchor:start(1).
@@ -338,6 +359,10 @@ launch(nav) ->
 ```
 
 # Experiment 15
+we positioned the anchors in {1, 4.70,, 0.05}, {2, 0.10, 0.05} and used to the
+extend kalman filter with a state for 6 (px, py, vx, vy, ax, xy) to measure a
+the position.
+
 On uwb_1:
 ```
 uwb_anchor:start(1).
@@ -364,7 +389,7 @@ in `sensor_fusion.erl`
 ```erlang
 set_args(uwb) ->
     %% uwb_measure
-    Config = {[{1, 2.30, 0.05}, {2, 0.10, 0.05}]},
+    Config = {[{1, 4.70,, 0.05}, {2, 0.10, 0.05}]},
     update_table({{uwb, node()}, Config}).
 
 launch(uwb) ->
