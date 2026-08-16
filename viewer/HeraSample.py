@@ -42,7 +42,7 @@ FORMATS = {
         ]
     },
 
-    "nav2_ekf": {
+    "Ekf6_nav2_uwb": {
         "columns": [
             "px",
             "py",
@@ -61,36 +61,6 @@ FORMATS = {
             "roll",
             "pitch",
             "yaw",
-        ]
-    },
-
-    "ekf_v1": {
-        "columns": [
-            "timestamp",
-            "dt",
-
-            "roll",
-            "pitch",
-            "yaw",
-
-            "gyro_x",
-            "gyro_y",
-            "gyro_z",
-
-            "acc_x",
-            "acc_y",
-            "acc_z",
-
-            "grav_res_x",
-            "grav_res_y",
-            "grav_res_z",
-
-            "lin_acc_x",
-            "lin_acc_y",
-            "lin_acc_z",
-
-            "world_acc_x",
-            "world_acc_y",
         ]
     },
 }

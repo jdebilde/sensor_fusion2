@@ -1,13 +1,13 @@
 from .ViewBase import ViewBase
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Rectangle, Circle
 import tkinter as tk
 
 
 class Position_stevin(ViewBase):
     name = "position_stevin"
-    default_format = "nav2_ekf"
+    default_format = "Ekf6_nav2_uwb"
 
     # Coordonnées en mètres
     ANCHORS = [
@@ -50,6 +50,7 @@ class Position_stevin(ViewBase):
         # Tables et ancres d'abord, pour rester en arrière-plan
         self.draw_tables()
         self.draw_anchors()
+        self.draw_real_trajectory(1) 
 
         # Position 2D
         self.ax_pos.plot(px_cm, py_cm, marker="o", markersize=2, label="trajectory")
@@ -119,6 +120,54 @@ class Position_stevin(ViewBase):
                 ha="center",
                 va="center"
             )
+    
+    def draw_real_trajectory(self, index=0):
+        """
+        This function allows you to plot the actual trajectory
+        """
+        if index == 0:
+            return
+        
+        elif index == 1:
+            x_m, y_m, width_m, height_m = 1 * 0.8 + 0.115, 1 * 1.6 + 0.15, 0.575, 1.40
+            x_cm = x_m * 100.0
+            y_cm = y_m * 100.0
+            width_cm = width_m * 100.0
+            height_cm = height_m * 100.0
+
+            rect = Rectangle(
+                (x_cm, y_cm), width_cm, height_cm, fill=False, linewidth=2,
+                linestyle='dotted', color='red')
+
+            self.ax_pos.add_patch(rect)
+        
+        elif index == 2:
+            x_m, y_m = 1 * 0.8 + 0.4, 1 * 1.6 + 0.8
+            x_cm = x_m * 100.0
+            y_cm = y_m * 100.0
+
+            circle = Circle(xy=(x_cm, y_cm), radius=38, fill=False, 
+                edgecolor='red', linewidth=2, linestyle='dotted')
+
+            self.ax_pos.add_patch(circle)
+        
+        elif index == 3:
+            x_m, y_m = 1 * 0.8 + 0.4, 1 * 1.6 + 0.8 - 0.25
+            x_cm = x_m * 100.0
+            y_cm = y_m * 100.0
+
+            circle = Circle(xy=(x_cm, y_cm), radius=25, fill=False, 
+                edgecolor='red', linewidth=2, linestyle='dotted')
+
+            self.ax_pos.add_patch(circle)
+            x_m, y_m = 1 * 0.8 + 0.4, 1 * 1.6 + 0.8 + 0.25
+            x_cm = x_m * 100.0
+            y_cm = y_m * 100.0
+
+            circle = Circle(xy=(x_cm, y_cm), radius=25, fill=False, 
+                edgecolor='red', linewidth=2, linestyle='dotted')
+
+            self.ax_pos.add_patch(circle)
 
     def static_points_cm(self):
         """

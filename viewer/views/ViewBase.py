@@ -29,7 +29,8 @@ class ViewBase:
         self.canvas.draw()
 
         for i, old_ax in enumerate(self.fig.axes, start=1):
-            new_fig, new_ax = plt.subplots(figsize=(8, 5), dpi=150)
+            old_size = old_ax.figure.get_size_inches()
+            new_fig, new_ax = plt.subplots(figsize=old_size, dpi=old_ax.figure.dpi)
 
             # Copy lines
             for line in old_ax.get_lines():
@@ -57,7 +58,7 @@ class ViewBase:
 
             # Copy rectangles / patches, useful for tables
             for patch in old_ax.patches:
-                from matplotlib.patches import Rectangle
+                from matplotlib.patches import Rectangle, Circle
 
                 if isinstance(patch, Rectangle):
                     x, y = patch.get_xy()
@@ -70,6 +71,19 @@ class ViewBase:
                         edgecolor=patch.get_edgecolor(),
                         facecolor=patch.get_facecolor(),
                     )
+                    new_ax.add_patch(new_patch)
+
+                elif isinstance(patch, Circle):
+                    new_patch = Circle(
+                        patch.center,
+                        patch.radius,
+                        fill=patch.get_fill(),
+                        linewidth=patch.get_linewidth(),
+                        linestyle=patch.get_linestyle(),
+                        edgecolor=patch.get_edgecolor(),
+                        facecolor=patch.get_facecolor(),
+                    )
+
                     new_ax.add_patch(new_patch)
 
             # Copy text annotations
@@ -105,7 +119,7 @@ class ViewBase:
             filename = os.path.join(output_dir, f"{prefix}_{i}.png")
 
             new_fig.tight_layout()
-            new_fig.savefig(filename, dpi=200, bbox_inches="tight", pad_inches=0.25)
+            new_fig.savefig(filename, dpi=old_ax.figure.dpi, bbox_inches=None, pad_inches=0)
             plt.close(new_fig)
 
             print(f"Exported {filename}")

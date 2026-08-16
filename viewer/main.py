@@ -12,15 +12,16 @@ from CsvReplaySource import CsvReplaySource
 from LiveUdpSource import LiveUdpSource
 from config import MCAST_GRP, MCAST_PORT
 from HeraSample import FORMATS
-from views.Nav2 import Nav2
+
 from views.Nav1_acc import Nav1_acc
 from views.Nav1_gyro import Nav1_gyro
 from views.Nav1_mag import Nav1_mag
-from views.Nav2_ekf import Nav2_ekf
+from views.Nav2 import Nav2
 from views.Heading_gyro import Heading_gyro
-from views.Ekf_v1 import Ekf_v1
+from views.Ekf6_nav2_uwb import Ekf6_nav2_uwb
 from views.Position_stevin import Position_stevin
 from views.Position_stevin2 import Position_stevin2
+from views.Position_stevin3 import Position_stevin3
 
 DEFAULT_PC_IP = "172.20.10.3"
 DEFAULT_MEASURE = "nav2"
@@ -31,14 +32,26 @@ VIEWS = {
     Nav1_gyro.name: Nav1_gyro,
     Nav1_mag.name: Nav1_mag,
     Nav2.name: Nav2,
-    Nav2_ekf.name: Nav2_ekf,
+    Ekf6_nav2_uwb.name: Ekf6_nav2_uwb,
     Position_stevin.name: Position_stevin,
     Position_stevin2.name: Position_stevin2,
-    Heading_gyro.name: Heading_gyro,
-    Ekf_v1.name: Ekf_v1,
+    Position_stevin3.name: Position_stevin3,
+    # Heading_gyro.name: Heading_gyro,
 }
 
-MEASUREMENTS = list(VIEWS.keys()) + ['ekf_v2'] + ['bilateration'] + ['ekf2_uwb'] + ['ekf4_nav2'] + ['ekf4_nav2_uwb'] + ['ekf6_nav2'] + ['ekf6_nav2_uwb'] + ['nav2_acc_gyro']
+MEASUREMENTS = [
+    'nav1_acc',
+    'nav1_gyro',
+    'nav1_mag',
+    'nav2_acc_gyro',
+    'nav2',
+    'bilateration',
+    'ekf4_nav2',
+    'ekf4_nav2_uwb',
+    'ekf6_nav2',
+    'ekf6_nav2_uwb'
+]
+
 
 class HeraViewerApp:
     def __init__(self, root):
@@ -265,9 +278,11 @@ class HeraViewerApp:
         if self.view is None:
             return
 
+        path = self.csv_file_var.get().strip()
+        filename = path.split('/')[-1][:-4]
         self.view.export_subplots(
             output_dir="exports",
-            prefix=self.view.name
+            prefix=filename
         )
 
 
